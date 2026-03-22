@@ -3,6 +3,7 @@ import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
 import { useAgreementList } from "@/hooks/useAgreement";
 import { AgreementStatusBadge } from "@/components/StatusBadge";
+import { AgentBadge } from "@/components/AgentBadge";
 
 export default function AgreementsList() {
   const { address, isConnected, openModal: connect } = useWallet();
@@ -80,13 +81,15 @@ export default function AgreementsList() {
                 <p className="text-sm text-white/80 truncate">
                   {ag.description}
                 </p>
-                <div className="flex gap-4 mt-2 text-xs text-white/30">
-                  <span>
+                <div className="flex items-center gap-4 mt-2 text-xs text-white/30">
+                  <span className="inline-flex items-center gap-1">
                     Client: {ag.client.slice(0, 6)}...{ag.client.slice(-4)}
+                    <AgentBadge address={ag.client} />
                   </span>
-                  <span>
+                  <span className="inline-flex items-center gap-1">
                     Provider: {ag.provider.slice(0, 6)}...
                     {ag.provider.slice(-4)}
+                    <AgentBadge address={ag.provider} />
                   </span>
                   <span>{ag.milestone_count} milestone(s)</span>
                 </div>

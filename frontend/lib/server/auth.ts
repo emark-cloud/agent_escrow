@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { privateKeyToAccount } from "viem/accounts";
 import { timingSafeEqual } from "crypto";
 import type { Address, Hex } from "viem";
+import { getAllAgents } from "./agentStore";
 
 export interface WalletInfo {
   privateKey: Hex;
@@ -62,7 +63,14 @@ export function getWalletForRequest(req: NextRequest): WalletInfo | NextResponse
   }
 
   const envKey = `WALLET_${walletId.toUpperCase()}`;
-  const privateKey = process.env[envKey];
+  let privateKey = process.env[envKey];
+
+  // Fallback to agents.json if not in env
+  if (!privateKey) {
+    const fileAgents = getAllAgents();
+    privateKey = fileAgents[walletId.toLowerCase()];
+  }
+
   if (!privateKey) {
     return NextResponse.json(
       { error: `Wallet "${walletId}" not configured` },

@@ -7,6 +7,7 @@ import {
   MilestoneStatusBadge,
 } from "@/components/StatusBadge";
 import { TransactionButton } from "@/components/TransactionButton";
+import { AgentBadge } from "@/components/AgentBadge";
 import { DisputePanel } from "./DisputePanel";
 import { ResolvePanel } from "./ResolvePanel";
 
@@ -64,20 +65,26 @@ export default function AgreementDetail({
         <div className="grid grid-cols-2 gap-6">
           <div>
             <div className="text-xs text-white/40 mb-1">Client</div>
-            <div className="font-mono text-sm">
-              {agreement.client.slice(0, 10)}...{agreement.client.slice(-6)}
+            <div className="font-mono text-sm flex items-center gap-2">
+              <span>
+                {agreement.client.slice(0, 10)}...{agreement.client.slice(-6)}
+              </span>
+              <AgentBadge address={agreement.client} />
               {isClient && (
-                <span className="ml-2 text-xs text-violet-400">(you)</span>
+                <span className="text-xs text-violet-400">(you)</span>
               )}
             </div>
           </div>
           <div>
             <div className="text-xs text-white/40 mb-1">Provider</div>
-            <div className="font-mono text-sm">
-              {agreement.provider.slice(0, 10)}...
-              {agreement.provider.slice(-6)}
+            <div className="font-mono text-sm flex items-center gap-2">
+              <span>
+                {agreement.provider.slice(0, 10)}...
+                {agreement.provider.slice(-6)}
+              </span>
+              <AgentBadge address={agreement.provider} />
               {isProvider && (
-                <span className="ml-2 text-xs text-violet-400">(you)</span>
+                <span className="text-xs text-violet-400">(you)</span>
               )}
             </div>
           </div>
