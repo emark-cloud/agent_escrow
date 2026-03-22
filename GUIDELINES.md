@@ -246,7 +246,12 @@ function mapToObject(value: unknown): unknown {
     return obj;
   }
   if (Array.isArray(value)) return value.map(mapToObject);
-  if (typeof value === "bigint") return Number(value);
+  if (typeof value === "bigint") {
+    // Use Number for safe values, string for large values to avoid precision loss
+    return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(-Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : value.toString();
+  }
   return value;
 }
 
@@ -264,7 +269,7 @@ export async function readContract<T>(
 }
 ```
 
-**Important:** GenLayer SDK returns `Map` objects and `bigint` for `u256`. The `mapToObject` helper handles both conversions recursively.
+**Important:** GenLayer SDK returns `Map` objects and `bigint` for `u256`. The `mapToObject` helper handles both conversions recursively. Large `bigint` values (> `Number.MAX_SAFE_INTEGER`) are converted to strings to avoid precision loss.
 
 ### 2.4 Writing Transactions (StudioNet)
 
@@ -389,17 +394,22 @@ async function ensureCorrectChain(): Promise<void> {
       method: "wallet_switchEthereumChain",
       params: [{ chainId: GENLAYER_CHAIN.chainId }],
     });
-  } catch {
-    // Catch ALL errors (not just 4902) and try adding the chain
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [GENLAYER_CHAIN],
-    });
+  } catch (e: unknown) {
+    // Only catch 4902 (chain not added) — re-throw user rejections and other errors
+    const code = (e as { code?: number })?.code;
+    if (code === 4902) {
+      await window.ethereum.request({
+        method: "wallet_addEthereumChain",
+        params: [GENLAYER_CHAIN],
+      });
+    } else {
+      throw e;
+    }
   }
 }
 ```
 
-**Important:** Call `ensureCorrectChain()` before every write transaction, not just on wallet connect. MetaMask can drift to other networks between interactions.
+**Important:** Call `ensureCorrectChain()` before every write transaction, not just on wallet connect. MetaMask can drift to other networks between interactions. Only catch error code 4902 (chain not added) — re-throw user rejections (code 4001) and other errors.
 
 ---
 
@@ -427,15 +437,15 @@ Design your UI accordingly:
 
 ### 3.3 BigInt Handling
 
-Always convert `bigint` to `number` at consumption points:
+Convert `bigint` safely — use `Number` only for values within safe integer range:
 
 ```typescript
 const amount = typeof data.amount === 'bigint'
-  ? Number(data.amount)
+  ? (data.amount <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(data.amount) : data.amount.toString())
   : data.amount;
 ```
 
-Or use the `mapToObject()` helper which handles this recursively.
+Or use the `mapToObject()` helper which handles this recursively with safe conversion.
 
 ### 3.4 AI Prompt Design
 
@@ -803,3 +813,91 @@ A transaction can be ACCEPTED (validators agreed) but have `exit_code 1` (contra
 - `exit_code 1` = contract error (ValueError, UserError, etc.)
 
 Use `genlayer receipt <txHash> --stderr` to see the Python traceback.
+
+### 4.18 Input Validation for Pipe-Separated Fields
+
+When a contract uses pipe-separated strings (`"|".join(...)`) to encode multiple values in a single parameter, validate that individual values don't contain the delimiter:
+
+```typescript
+// API route validation
+export function validateNoPipes(fields: Record<string, string>): NextResponse | null {
+  for (const [name, value] of Object.entries(fields)) {
+    if (value.includes("|")) {
+      return NextResponse.json(
+        { error: `Field "${name}" must not contain the pipe character (|)` },
+        { status: 400 }
+      );
+    }
+  }
+  return null;
+}
+```
+
+Similarly, validate `agreement_id` doesn't contain `:` (used as milestone key separator) or `,` (used in `get_agreements_by_address` CSV output).
+
+### 4.19 API Key Security
+
+Use timing-safe comparison for API key validation to prevent timing side-channel attacks:
+
+```typescript
+import { timingSafeEqual } from "crypto";
+
+function checkApiKey(req: NextRequest): NextResponse | null {
+  const apiKey = req.headers.get("x-api-key");
+  const expected = process.env.API_KEY;
+  if (!apiKey || !expected) return unauthorized();
+  const a = Buffer.from(apiKey);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) return unauthorized();
+  return null;
+}
+```
+
+Never leak internal naming conventions (env var names, wallet IDs) in error messages.
+
+### 4.20 Contract View Return Types
+
+Contract view methods may return different types than expected. For example, `get_agreements_by_address` returns a comma-separated `str`, not a `list[str]`. Handle at the `readContract` wrapper level:
+
+```typescript
+if (functionName === "get_agreements_by_address") {
+  const str = result as string;
+  return (str ? str.split(",") : []) as T;
+}
+```
+
+### 4.21 Dispute State Machine (Multi-Milestone)
+
+When a contract supports multiple disputable items within a parent entity:
+- Allow disputes when parent is ACTIVE or already DISPUTED
+- On resolution, check **all** items to determine parent state (not just the resolved one)
+- Guard against disputing items in terminal states (PAID, REFUNDED, FAILED)
+
+```python
+# After resolving one milestone, check remaining state
+any_disputed = False
+all_done = True
+for i in range(int(existing.milestone_count)):
+    s = self.milestones[f"{agreement_id}:{i}"].status
+    if s == MS_DISPUTED:
+        any_disputed = True
+    if s != MS_PAID and s != MS_FAILED and s != MS_REFUNDED:
+        all_done = False
+
+if all_done:
+    existing.status = STATUS_COMPLETED
+elif any_disputed:
+    existing.status = STATUS_DISPUTED
+else:
+    existing.status = STATUS_ACTIVE
+```
+
+### 4.22 Agent Integration Patterns
+
+**REST API:** Server holds private keys, executes txs. Auth via API key + wallet ID headers. GenLayer's custom calldata encoding means agents can't easily prepare their own transactions — server-side signing is the correct approach.
+
+**MCP Server:** Same server-side signing. Tools mirror REST endpoints.
+
+**Skill File (`SKILL.md`):** Executable documentation with curl examples for agents that aren't MCP-compatible. Include a pre-flight health check endpoint, heartbeat pattern (portfolio endpoint), and error recovery steps.
+
+**Portfolio/Heartbeat pattern:** A single endpoint that returns all agreements + milestones + actionable items for an address. Agents call it periodically to discover work (SLA checks to run, payments to release, disputes to respond to).

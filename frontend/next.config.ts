@@ -1,8 +1,9 @@
 import type { NextConfig } from "next";
+import { resolve } from "path";
 
 const nextConfig: NextConfig = {
   turbopack: {
-    root: "/home/emark/genlayer_hackathon/frontend",
+    root: resolve(__dirname),
   },
 };
 

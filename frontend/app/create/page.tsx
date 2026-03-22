@@ -16,11 +16,11 @@ const emptyMilestone: MilestoneFormData = {
 };
 
 export default function CreateAgreement() {
-  const { address, isConnected, connect } = useWallet();
+  const { address, isConnected, openModal: connect } = useWallet();
   const router = useRouter();
 
   const [agreementId, setAgreementId] = useState(
-    () => `ag-${Date.now()}`
+    () => `ag-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
   );
   const [provider, setProvider] = useState("");
   const [description, setDescription] = useState("");
@@ -67,9 +67,26 @@ export default function CreateAgreement() {
       setError("Provider address and description are required");
       return;
     }
+    const addressRegex = /^0x[0-9a-fA-F]{40}$/;
+    if (!addressRegex.test(provider)) {
+      setError("Provider address must be a valid 0x address (42 characters)");
+      return;
+    }
+    if (provider.toLowerCase() === address?.toLowerCase()) {
+      setError("Provider cannot be the same as client");
+      return;
+    }
+
     for (const m of milestones) {
       if (!m.description || !m.monitoring_url || !m.sla_criteria || !m.amount) {
         setError("All milestone fields are required");
+        return;
+      }
+    }
+
+    for (const m of milestones) {
+      if ([m.description, m.monitoring_url, m.sla_criteria, m.amount].some(f => f.includes("|"))) {
+        setError("Milestone fields cannot contain the pipe character (|)");
         return;
       }
     }
@@ -262,7 +279,7 @@ export default function CreateAgreement() {
 
               <div>
                 <label className="block text-sm text-white/60 mb-1">
-                  Payment Amount (units)
+                  Payment Amount (USDC)
                 </label>
                 <input
                   type="number"
@@ -288,7 +305,7 @@ export default function CreateAgreement() {
                 (sum, m) => sum + Number(m.amount || 0),
                 0
               )}{" "}
-              units
+              USDC
             </span>
           </div>
         )}

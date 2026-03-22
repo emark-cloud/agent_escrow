@@ -5,8 +5,11 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 ## Project Structure
 
 - `contracts/agent_escrow.py` — GenLayer Intelligent Contract (escrow + SLA logic)
+- `contracts/InternetCourt.py` — IC contract source (kept in sync with embedded version)
 - `frontend/` — Next.js 16 + TypeScript + TailwindCSS app
-- `frontend/lib/internetCourtCode.ts` — Internet Court contract (embedded, deployed from frontend)
+- `frontend/lib/internetCourtCode.ts` — IC contract (embedded, deployed from frontend). **Authoritative copy** — `contracts/InternetCourt.py` is synced from this.
+- `mcp/` — MCP server for AI agent integration (13 tools)
+- `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `GUIDELINES.md` — GenLayer development patterns reference
 
 ## Contract
@@ -18,8 +21,25 @@ Deployed on **Bradbury testnet**. Contract address is in `frontend/lib/config.ts
 - `accept_agreement(agreement_id)` — Provider accepts
 - `check_sla(agreement_id, milestone_index)` — AI-powered live SLA check
 - `verify_milestone` / `release_payment` — Settlement flow
-- `dispute_milestone(agreement_id, milestone_index, reason)` — Flag milestone as disputed
-- `resolve_dispute(agreement_id, milestone_index, verdict, court_address)` — Apply IC verdict to escrow
+- `dispute_milestone(agreement_id, milestone_index, reason)` — Flag milestone as disputed (works in ACTIVE or DISPUTED state for multi-milestone disputes)
+- `resolve_dispute(agreement_id, milestone_index, verdict, court_address)` — Apply IC verdict to escrow (client or provider only)
+- `submit_evidence(agreement_id, milestone_index, evidence)` — Submit evidence for disputed milestone
+- `cancel_agreement(agreement_id)` — Cancel before acceptance
+- `refund_failed_milestone(agreement_id, milestone_index)` — Refund a failed milestone
+
+### Contract Input Validation
+- **`agreement_id`** must not contain `:`, `|`, or `,` characters (used as delimiters internally)
+- **Milestone fields** must not contain `|` (pipe-separated encoding). Validated in API/MCP before sending.
+- **`milestone_index`** must be a non-negative integer. Validated in API routes and MCP.
+
+### Dispute State Machine
+- An agreement can have multiple disputed milestones simultaneously
+- `dispute_milestone` works when agreement is ACTIVE or DISPUTED
+- `resolve_dispute` sets agreement back to ACTIVE, DISPUTED, or COMPLETED depending on remaining milestone states
+- Milestones in PAID, REFUNDED, or FAILED status cannot be disputed
+
+### `get_agreements_by_address` Return Type
+Returns a **comma-separated string**, not a list. All `readContract` wrappers (client-side, server-side, MCP) automatically split this into `string[]`. If calling the contract directly, split the result: `result ? result.split(",") : []`.
 
 ### Internet Court (IC) Contract
 Deployed from frontend at runtime. Resolves disputes via AI jury consensus.
@@ -30,6 +50,39 @@ Deployed from frontend at runtime. Resolves disputes via AI jury consensus.
 
 **Address comparison:** Always use `.as_hex.lower()` for address comparisons in contracts. Direct `==` on Address objects can fail on Bradbury due to checksum differences.
 
+## Agent Integration
+
+### REST API (`frontend/app/api/`)
+Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-key` header + `x-wallet-id` header for writes. Optional `?wait=true` for synchronous consensus.
+
+**Endpoints:**
+- `GET /api/health` — Public. Returns contract address, chain config, RPC status.
+- `GET /api/agreements` — List all (or `?address=0x...` to filter)
+- `GET /api/agreements/:id` — Single agreement with milestones
+- `GET /api/portfolio?address=0x...` — Batch read: all agreements + milestones + actionable items
+- `POST /api/agreements` — Create agreement
+- `POST /api/agreements/:id/accept` — Accept agreement
+- `POST /api/agreements/:id/check-sla` — Run AI SLA check
+- `POST /api/agreements/:id/verify` — Verify milestone
+- `POST /api/agreements/:id/release` — Release payment
+- `POST /api/agreements/:id/dispute` — Dispute milestone
+- `POST /api/agreements/:id/submit-evidence` — Submit evidence
+- `POST /api/agreements/:id/resolve` — Apply IC verdict
+- `POST /api/agreements/:id/refund` — Refund failed milestone
+- `POST /api/agreements/:id/cancel` — Cancel agreement
+
+### MCP Server (`mcp/`)
+Same capabilities as REST API. 13 tools: `get_agreement`, `list_agreements`, `create_agreement`, `accept_agreement`, `check_sla`, `verify_milestone`, `release_payment`, `dispute_milestone`, `submit_evidence`, `resolve_dispute`, `cancel_agreement`, `refund_milestone`, `check_portfolio`.
+
+### SKILL.md
+Complete agent onboarding doc with curl examples, error handling, heartbeat pattern, and two-agent flow walkthrough. Agents that aren't MCP-compatible use this.
+
+### Auth & Security
+- API key compared with `crypto.timingSafeEqual` (timing-safe)
+- Wallet env var names not leaked in error messages
+- `milestone_index` validated as non-negative integer on all routes
+- Pipe characters rejected in milestone fields to prevent encoding corruption
+
 ## Frontend
 
 ```bash
@@ -39,19 +92,23 @@ npm run dev
 ```
 
 ### Key Frontend Files
-- `lib/config.ts` — Chain config, contract addresses, status labels
+- `lib/config.ts` — Chain config, contract addresses, status labels, separate color maps for agreement vs milestone status
 - `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking)
+- `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`)
+- `lib/server/genlayer-server.ts` — Server-side contract interaction
 - `lib/internetCourtCode.ts` — IC contract source code (deployed from browser)
 - `lib/errors.ts` — User-friendly error mapping
 - `components/ConsensusTracker.tsx` — Live validator progress UI
 - `components/TransactionButton.tsx` — Reusable tx button with consensus tracking
+- `components/StatusBadge.tsx` — Uses `AGREEMENT_STATUS_COLORS` for agreements, `STATUS_COLORS` for milestones
 - `app/agreements/[id]/ResolvePanel.tsx` — Internet Court dispute resolution UI
 
 ## GenLayer Patterns
 - See `GUIDELINES.md` for contract storage types, LLM patterns, and frontend integration
 - **Bradbury testnet** — consensus contract `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D`
 - Reads use `genlayer-js` SDK `readContract()` with `testnetBradbury` chain
-- GenLayer SDK returns `Map` and `bigint` — use `mapToObject()` helper
+- GenLayer SDK returns `Map` and `bigint` — `mapToObject()` converts safely (Number for safe values, string for large bigints)
 - L1 tx hash ≠ GenLayer txId on Bradbury — extract from `NewTransaction` event logs
 - Gas: ~5M for writes (`0x4C4B40`), ~20M for contract deployments (`0x1312D00`)
 - Don't send rapid-fire txs to same contract — wait for ACCEPTED before next tx
+- `ensureCorrectChain()` only catches error code 4902 (chain not added), re-throws user rejections

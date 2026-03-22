@@ -5,8 +5,8 @@ import { useAgreementList } from "@/hooks/useAgreement";
 import { AgreementStatusBadge } from "@/components/StatusBadge";
 
 export default function AgreementsList() {
-  const { address, isConnected, connect } = useWallet();
-  const { agreements, loading } = useAgreementList(address);
+  const { address, isConnected, openModal: connect } = useWallet();
+  const { agreements, loading, error } = useAgreementList(address);
 
   if (!isConnected) {
     return (
@@ -42,11 +42,17 @@ export default function AgreementsList() {
         </Link>
       </div>
 
+      {error && (
+        <div className="p-4 mb-4 bg-red-500/10 border border-red-500/20 rounded-lg text-sm text-red-400">
+          Failed to load agreements: {error}
+        </div>
+      )}
+
       {loading ? (
         <div className="text-center py-20 text-white/40">
           Loading agreements...
         </div>
-      ) : agreements.length === 0 ? (
+      ) : agreements.length === 0 && !error ? (
         <div className="glass-card rounded-xl p-12 text-center">
           <p className="text-white/40 mb-4">No agreements yet.</p>
           <Link
@@ -86,7 +92,7 @@ export default function AgreementsList() {
                 </div>
               </div>
               <div className="text-right ml-4">
-                <div className="text-sm font-mono">{ag.total_amount} units</div>
+                <div className="text-sm font-mono">{ag.total_amount} USDC</div>
               </div>
             </Link>
           ))}

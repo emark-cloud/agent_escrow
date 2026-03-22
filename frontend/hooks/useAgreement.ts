@@ -11,18 +11,39 @@ export function useAgreement(agreementId: string) {
 
   const fetch = useCallback(async () => {
     try {
-      const ag = await readContract<Agreement>("get_agreement", [agreementId]);
+      const agRaw = await readContract<Record<string, unknown>>("get_agreement", [agreementId]);
+      const ag: Agreement = {
+        agreement_id: String(agRaw.agreement_id ?? ""),
+        client: String(agRaw.client ?? ""),
+        provider: String(agRaw.provider ?? ""),
+        description: String(agRaw.description ?? ""),
+        total_amount: Number(agRaw.total_amount ?? 0),
+        milestone_count: Number(agRaw.milestone_count ?? 0),
+        status: Number(agRaw.status ?? 0),
+        court_case_id: String(agRaw.court_case_id ?? ""),
+      };
       setAgreement(ag);
 
-      const ms: Milestone[] = [];
-      for (let i = 0; i < ag.milestone_count; i++) {
-        const m = await readContract<Milestone>("get_milestone", [
-          agreementId,
-          i,
-        ]);
-        ms.push(m);
-      }
-      setMilestones(ms);
+      const msRaws = await Promise.all(
+        Array.from({ length: ag.milestone_count }, (_, i) =>
+          readContract<Record<string, unknown>>("get_milestone", [agreementId, i])
+        )
+      );
+      setMilestones(
+        msRaws.map((mRaw) => ({
+          description: String(mRaw.description ?? ""),
+          monitoring_url: String(mRaw.monitoring_url ?? ""),
+          sla_criteria: String(mRaw.sla_criteria ?? ""),
+          amount: Number(mRaw.amount ?? 0),
+          pass_count: Number(mRaw.pass_count ?? 0),
+          fail_count: Number(mRaw.fail_count ?? 0),
+          status: Number(mRaw.status ?? 0),
+          last_check_result: String(mRaw.last_check_result ?? ""),
+          dispute_reason: String(mRaw.dispute_reason ?? ""),
+          evidence_client: String(mRaw.evidence_client ?? ""),
+          evidence_provider: String(mRaw.evidence_provider ?? ""),
+        }))
+      );
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -44,6 +65,7 @@ export function useAgreement(agreementId: string) {
 export function useAgreementList(address: string | null) {
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   const fetch = useCallback(async () => {
     if (!address) {
@@ -52,24 +74,34 @@ export function useAgreementList(address: string | null) {
       return;
     }
     try {
-      const idsCsv = await readContract<string>("get_agreements_by_address", [
-        address,
-      ]);
-      const ids: string[] = idsCsv ? idsCsv.split(",").filter(Boolean) : [];
+      setLoading(true);
+      const ids = await readContract<string[]>("get_agreements_by_address", [address]);
       const uniqueIds = [...new Set(ids)];
 
-      const results: Agreement[] = [];
-      for (const id of uniqueIds) {
-        try {
-          const ag = await readContract<Agreement>("get_agreement", [id]);
-          results.push(ag);
-        } catch {
-          // skip invalid
-        }
-      }
-      setAgreements(results);
-    } catch {
+      const results = await Promise.all(
+        uniqueIds.map(async (id) => {
+          try {
+            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id]);
+            return {
+              agreement_id: String(agRaw.agreement_id ?? ""),
+              client: String(agRaw.client ?? ""),
+              provider: String(agRaw.provider ?? ""),
+              description: String(agRaw.description ?? ""),
+              total_amount: Number(agRaw.total_amount ?? 0),
+              milestone_count: Number(agRaw.milestone_count ?? 0),
+              status: Number(agRaw.status ?? 0),
+              court_case_id: String(agRaw.court_case_id ?? ""),
+            } as Agreement;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setAgreements(results.filter((r): r is Agreement => r !== null));
+      setError(null);
+    } catch (err) {
       setAgreements([]);
+      setError(err instanceof Error ? err.message : "Failed to load agreements");
     } finally {
       setLoading(false);
     }
@@ -81,5 +113,5 @@ export function useAgreementList(address: string | null) {
     return () => clearInterval(interval);
   }, [fetch]);
 
-  return { agreements, loading, refetch: fetch };
+  return { agreements, loading, error, refetch: fetch };
 }

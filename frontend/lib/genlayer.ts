@@ -3,21 +3,29 @@ import { testnetBradbury } from "genlayer-js/chains";
 import type { CalldataEncodable } from "genlayer-js/types";
 import { encodeFunctionData, type Address, type Hex } from "viem";
 import { GENLAYER_CONFIG, GENLAYER_CHAIN } from "./config";
+import { getProvider } from "./provider";
 
 const { calldata, transactions } = abi;
 
 async function ensureCorrectChain() {
-  if (!window.ethereum) return;
+  const provider = getProvider();
+  if (!provider) throw new Error("No wallet connected. Please connect your wallet first.");
   try {
-    await window.ethereum.request({
+    await provider.request({
       method: "wallet_switchEthereumChain",
       params: [{ chainId: GENLAYER_CHAIN.chainId }],
     });
-  } catch {
-    await window.ethereum.request({
-      method: "wallet_addEthereumChain",
-      params: [GENLAYER_CHAIN],
-    });
+  } catch (e: unknown) {
+    // 4902 = chain not added; only then try to add it
+    const code = (e as { code?: number })?.code;
+    if (code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [GENLAYER_CHAIN],
+      });
+    } else {
+      throw e;
+    }
   }
 }
 
@@ -62,7 +70,10 @@ export function mapToObject(value: unknown): unknown {
     return value.map(mapToObject);
   }
   if (typeof value === "bigint") {
-    return Number(value);
+    // Use Number for values that fit safely, string for large values
+    return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(-Number.MAX_SAFE_INTEGER)
+      ? Number(value)
+      : value.toString();
   }
   return value;
 }
@@ -76,12 +87,20 @@ export async function readContract<T>(
   args: CalldataEncodable[] = []
 ): Promise<T> {
   const client = createReadClient();
-  const result = await client.readContract({
+  const raw = await client.readContract({
     address: GENLAYER_CONFIG.contractAddress as Address,
     functionName,
     args,
   });
-  return mapToObject(result) as T;
+  const result = mapToObject(raw);
+
+  // get_agreements_by_address returns a comma-separated string, not a list
+  if (functionName === "get_agreements_by_address") {
+    const str = result as string;
+    return (str ? str.split(",") : []) as T;
+  }
+
+  return result as T;
 }
 
 export async function readContractAt<T>(
@@ -103,7 +122,7 @@ export async function deployContract(
   args: CalldataEncodable[] = []
 ): Promise<string> {
   await ensureCorrectChain();
-  const accounts = (await window.ethereum.request({
+  const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
@@ -133,7 +152,7 @@ export async function deployContract(
     ],
   });
 
-  const txHash = (await window.ethereum.request({
+  const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {
@@ -186,7 +205,7 @@ export async function sendWriteTransactionTo(
   args: CalldataEncodable[]
 ): Promise<string> {
   await ensureCorrectChain();
-  const accounts = (await window.ethereum.request({
+  const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
@@ -213,7 +232,7 @@ export async function sendWriteTransactionTo(
     ],
   });
 
-  const txHash = (await window.ethereum.request({
+  const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {
@@ -233,7 +252,7 @@ export async function sendWriteTransaction(
   args: CalldataEncodable[]
 ): Promise<string> {
   await ensureCorrectChain();
-  const accounts = (await window.ethereum.request({
+  const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
@@ -260,7 +279,7 @@ export async function sendWriteTransaction(
     ],
   });
 
-  const txHash = (await window.ethereum.request({
+  const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {

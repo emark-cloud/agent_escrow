@@ -54,7 +54,7 @@ export default function AgreementDetail({
         <div className="text-right text-sm">
           <div className="text-white/40">Total Escrow</div>
           <div className="text-xl font-mono font-bold">
-            {agreement.total_amount} units
+            {agreement.total_amount} USDC
           </div>
         </div>
       </div>
@@ -132,7 +132,7 @@ export default function AgreementDetail({
                 <p className="text-sm font-medium">{ms.description}</p>
               </div>
               <div className="text-right">
-                <div className="font-mono text-sm">{ms.amount} units</div>
+                <div className="font-mono text-sm">{ms.amount} USDC</div>
               </div>
             </div>
 

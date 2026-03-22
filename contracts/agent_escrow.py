@@ -16,6 +16,7 @@ MS_VERIFIED = u256(2)
 MS_PAID = u256(3)
 MS_DISPUTED = u256(4)
 MS_FAILED = u256(5)
+MS_REFUNDED = u256(6)
 
 CHECKS_REQUIRED = u256(3)
 
@@ -34,6 +35,7 @@ class Milestone:
     dispute_reason: str
     evidence_client: str
     evidence_provider: str
+    dispute_count: u256
 
 
 @allow_storage
@@ -117,13 +119,16 @@ class AgentEscrow(gl.Contract):
         ms_criteria: str,
         ms_amounts: str,
     ) -> bool:
+        if ":" in agreement_id or "|" in agreement_id or "," in agreement_id:
+            raise gl.vm.UserError("Agreement ID must not contain ':', '|', or ',' characters")
+
         existing = self.agreements.get(agreement_id, None)
         if existing is not None:
             raise gl.vm.UserError("Agreement ID already exists")
 
         sender = gl.message.sender_address
         provider_addr = Address(provider)
-        if sender.as_hex == provider_addr.as_hex:
+        if sender.as_hex.lower() == provider_addr.as_hex.lower():
             raise gl.vm.UserError("Client and provider cannot be the same address")
 
         descs = ms_descriptions.split("|")
@@ -132,10 +137,19 @@ class AgentEscrow(gl.Contract):
         amts = ms_amounts.split("|")
         count = len(descs)
 
+        if count == 0:
+            raise gl.vm.UserError("At least one milestone is required")
+        if len(urls) != count or len(crits) != count or len(amts) != count:
+            raise gl.vm.UserError("Milestone field counts do not match")
+
         total = u256(0)
         for i in range(count):
-            key = f"{agreement_id}:{i}"
+            if not descs[i].strip() or not urls[i].strip() or not crits[i].strip():
+                raise gl.vm.UserError("Empty milestone fields are not allowed")
             amt = u256(int(amts[i]))
+            if amt == u256(0):
+                raise gl.vm.UserError("Milestone amount must be greater than zero")
+            key = f"{agreement_id}:{i}"
             total = u256(total + amt)
             self.milestones[key] = Milestone(
                 description=descs[i],
@@ -149,6 +163,7 @@ class AgentEscrow(gl.Contract):
                 dispute_reason="",
                 evidence_client="",
                 evidence_provider="",
+                dispute_count=u256(0),
             )
 
         self.agreement_count = u256(self.agreement_count + u256(1))
@@ -173,7 +188,7 @@ class AgentEscrow(gl.Contract):
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
 
-        if gl.message.sender_address.as_hex != existing.provider.as_hex:
+        if gl.message.sender_address.as_hex.lower() != existing.provider.as_hex.lower():
             raise gl.vm.UserError("Only the provider can accept")
         if existing.status != STATUS_CREATED:
             raise gl.vm.UserError("Agreement is not in CREATED state")
@@ -194,6 +209,10 @@ class AgentEscrow(gl.Contract):
         existing = self.agreements.get(agreement_id, None)
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
+
+        sender = gl.message.sender_address
+        if sender.as_hex.lower() != existing.client.as_hex.lower() and sender.as_hex.lower() != existing.provider.as_hex.lower():
+            raise gl.vm.UserError("Only client or provider can perform this action")
 
         if existing.status != STATUS_ACTIVE:
             raise gl.vm.UserError("Agreement is not active")
@@ -224,6 +243,9 @@ class AgentEscrow(gl.Contract):
             if len(web_data) > 5000:
                 web_data = web_data[:5000]
 
+            if not web_data.strip():
+                return "FAIL: Unable to fetch any data from the monitoring URL"
+
             prompt = f"""You are an SLA compliance monitor for an agent-to-agent escrow service.
 
 SLA Criteria: {sla_criteria}
@@ -252,7 +274,7 @@ Nothing else."""
 3. Be based on the actual web data, not assumptions"""
         )
 
-        if result.upper().startswith("PASS"):
+        if result.upper().startswith("PASS:"):
             milestone.pass_count = u256(milestone.pass_count + u256(1))
         else:
             milestone.fail_count = u256(milestone.fail_count + u256(1))
@@ -266,6 +288,10 @@ Nothing else."""
         existing = self.agreements.get(agreement_id, None)
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
+
+        sender = gl.message.sender_address
+        if sender.as_hex.lower() != existing.client.as_hex.lower() and sender.as_hex.lower() != existing.provider.as_hex.lower():
+            raise gl.vm.UserError("Only client or provider can perform this action")
 
         if existing.status != STATUS_ACTIVE:
             raise gl.vm.UserError("Agreement is not active")
@@ -295,7 +321,7 @@ Nothing else."""
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
 
-        if gl.message.sender_address.as_hex != existing.client.as_hex:
+        if gl.message.sender_address.as_hex.lower() != existing.client.as_hex.lower():
             raise gl.vm.UserError("Only the client can release payment")
         if existing.status != STATUS_ACTIVE:
             raise gl.vm.UserError("Agreement is not active")
@@ -331,9 +357,9 @@ Nothing else."""
             raise gl.vm.UserError("Agreement not found")
 
         sender = gl.message.sender_address
-        if sender.as_hex != existing.client.as_hex and sender.as_hex != existing.provider.as_hex:
+        if sender.as_hex.lower() != existing.client.as_hex.lower() and sender.as_hex.lower() != existing.provider.as_hex.lower():
             raise gl.vm.UserError("Only client or provider can dispute")
-        if existing.status != STATUS_ACTIVE:
+        if existing.status != STATUS_ACTIVE and existing.status != STATUS_DISPUTED:
             raise gl.vm.UserError("Agreement is not active")
 
         key = f"{agreement_id}:{milestone_index}"
@@ -345,9 +371,14 @@ Nothing else."""
             raise gl.vm.UserError("Cannot dispute a paid milestone")
         if milestone.status == MS_DISPUTED:
             raise gl.vm.UserError("Milestone is already disputed")
+        if milestone.status == MS_REFUNDED:
+            raise gl.vm.UserError("Cannot dispute a refunded milestone")
+        if milestone.status == MS_FAILED:
+            raise gl.vm.UserError("Cannot dispute a failed milestone")
 
         milestone.status = MS_DISPUTED
         milestone.dispute_reason = reason
+        milestone.dispute_count = u256(milestone.dispute_count + u256(1))
         self.milestones[key] = milestone
 
         existing.status = STATUS_DISPUTED
@@ -360,6 +391,10 @@ Nothing else."""
         existing = self.agreements.get(agreement_id, None)
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
+
+        sender = gl.message.sender_address
+        if sender.as_hex.lower() != existing.client.as_hex.lower() and sender.as_hex.lower() != existing.provider.as_hex.lower():
+            raise gl.vm.UserError("Only client or provider can resolve disputes")
 
         if existing.status != STATUS_DISPUTED:
             raise gl.vm.UserError("Agreement is not in disputed state")
@@ -382,21 +417,30 @@ Nothing else."""
         elif verdict == "PARTY_A":
             milestone.status = MS_FAILED
         else:
-            milestone.status = MS_MONITORING
+            if milestone.dispute_count >= u256(2):
+                milestone.status = MS_FAILED
+            else:
+                milestone.status = MS_MONITORING
 
         self.milestones[key] = milestone
 
-        existing.status = STATUS_ACTIVE
+        # Check if any other milestones are still disputed
+        any_disputed = False
         all_done = True
         for i in range(int(existing.milestone_count)):
             k = f"{agreement_id}:{i}"
             s = self.milestones[k].status
-            if s != MS_PAID and s != MS_FAILED:
+            if s == MS_DISPUTED:
+                any_disputed = True
+            if s != MS_PAID and s != MS_FAILED and s != MS_REFUNDED:
                 all_done = False
-                break
 
         if all_done:
             existing.status = STATUS_COMPLETED
+        elif any_disputed:
+            existing.status = STATUS_DISPUTED
+        else:
+            existing.status = STATUS_ACTIVE
 
         self.agreements[agreement_id] = existing
         return True
@@ -419,11 +463,11 @@ Nothing else."""
             raise gl.vm.UserError("Milestone is not disputed")
 
         sender = gl.message.sender_address
-        if sender.as_hex == existing.client.as_hex:
+        if sender.as_hex.lower() == existing.client.as_hex.lower():
             if milestone.evidence_client != "":
                 raise gl.vm.UserError("Client evidence already submitted")
             milestone.evidence_client = evidence
-        elif sender.as_hex == existing.provider.as_hex:
+        elif sender.as_hex.lower() == existing.provider.as_hex.lower():
             if milestone.evidence_provider != "":
                 raise gl.vm.UserError("Provider evidence already submitted")
             milestone.evidence_provider = evidence
@@ -439,11 +483,45 @@ Nothing else."""
         if existing is None:
             raise gl.vm.UserError("Agreement not found")
 
-        if gl.message.sender_address.as_hex != existing.client.as_hex:
+        if gl.message.sender_address.as_hex.lower() != existing.client.as_hex.lower():
             raise gl.vm.UserError("Only the client can cancel")
         if existing.status != STATUS_CREATED:
             raise gl.vm.UserError("Can only cancel before acceptance")
 
         existing.status = STATUS_CANCELLED
         self.agreements[agreement_id] = existing
+        return True
+
+    @gl.public.write
+    def refund_failed_milestone(self, agreement_id: str, milestone_index: int) -> bool:
+        existing = self.agreements.get(agreement_id, None)
+        if existing is None:
+            raise gl.vm.UserError("Agreement not found")
+
+        if gl.message.sender_address.as_hex.lower() != existing.client.as_hex.lower():
+            raise gl.vm.UserError("Only the client can request a refund")
+
+        key = f"{agreement_id}:{milestone_index}"
+        milestone = self.milestones.get(key, None)
+        if milestone is None:
+            raise gl.vm.UserError("Milestone not found")
+
+        if milestone.status != MS_FAILED:
+            raise gl.vm.UserError("Only failed milestones can be refunded")
+
+        milestone.status = MS_REFUNDED
+        self.milestones[key] = milestone
+
+        all_terminal = True
+        for i in range(int(existing.milestone_count)):
+            k = f"{agreement_id}:{i}"
+            s = self.milestones[k].status
+            if s != MS_PAID and s != MS_FAILED and s != MS_REFUNDED:
+                all_terminal = False
+                break
+
+        if all_terminal:
+            existing.status = STATUS_COMPLETED
+            self.agreements[agreement_id] = existing
+
         return True

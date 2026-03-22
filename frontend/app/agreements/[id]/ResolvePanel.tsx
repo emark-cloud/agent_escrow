@@ -142,7 +142,8 @@ export function ResolvePanel({
       });
 
       // Get connected wallet to determine the other party
-      const accounts = (await window.ethereum.request({
+      const { getProvider } = await import("@/lib/provider");
+      const accounts = (await getProvider().request({
         method: "eth_accounts",
       })) as string[];
       const sender = accounts[0]?.toLowerCase();
