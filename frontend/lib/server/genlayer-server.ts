@@ -179,6 +179,7 @@ export interface ConsensusResult {
   txHash: string;
   glTxId: string | null;
   status: string;
+  executionError?: string;
 }
 
 export async function serverWaitForConsensus(
@@ -202,6 +203,21 @@ export async function serverWaitForConsensus(
       const statusName = (tx as any).statusName as string;
 
       if (statusName === "ACCEPTED" || statusName === "FINALIZED") {
+        // Check if the contract execution itself errored
+        const resultName = (tx as any).resultName as string | undefined;
+        const leaderReceipt = (tx as any).leaderReceipt ?? (tx as any).leader_receipt;
+        const executionError =
+          leaderReceipt?.error ??
+          leaderReceipt?.executionError ??
+          ((tx as any).error as string | undefined);
+
+        if (executionError || (resultName && resultName !== "AGREE" && resultName !== "IDLE")) {
+          const errorMsg = executionError
+            ? String(executionError)
+            : `Contract execution result: ${resultName}`;
+          return { txHash: l1TxHash, glTxId, status: statusName, executionError: errorMsg };
+        }
+
         return { txHash: l1TxHash, glTxId, status: statusName };
       }
 
@@ -222,4 +238,48 @@ export async function serverWaitForConsensus(
   }
 
   throw new Error("Transaction timed out");
+}
+
+// --- Response helper ---
+import { NextResponse } from "next/server";
+
+/** Returns NextResponse with 422 if contract execution failed, 200 otherwise. */
+export function consensusResultResponse(result: ConsensusResult): NextResponse {
+  if (result.executionError) {
+    return NextResponse.json(result, { status: 422 });
+  }
+  return NextResponse.json(result);
+}
+
+// --- Activity-tracked consensus ---
+import { addActiveTx, removeActiveTx } from "./txActivity";
+
+export interface TrackedWaitOptions {
+  agreementId: string;
+  action: string;
+  wallet: string;
+}
+
+/**
+ * Like serverWaitForConsensus, but records the tx in tx-activity.json
+ * so the frontend can poll and show a ConsensusTracker.
+ */
+export async function serverWaitForConsensusTracked(
+  l1TxHash: string,
+  opts: TrackedWaitOptions
+): Promise<ConsensusResult> {
+  addActiveTx({
+    agreementId: opts.agreementId,
+    action: opts.action,
+    txHash: l1TxHash,
+    wallet: opts.wallet,
+    startedAt: Date.now(),
+  });
+
+  try {
+    const result = await serverWaitForConsensus(l1TxHash);
+    return result;
+  } finally {
+    removeActiveTx(opts.agreementId, opts.action);
+  }
 }

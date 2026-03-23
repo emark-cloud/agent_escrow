@@ -36,6 +36,9 @@ yarn-error.log*
 # runtime agent wallet store (contains private keys)
 agents.json
 
+# active transaction tracking
+tx-activity.json
+
 # vercel
 .vercel
 

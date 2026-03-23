@@ -8,6 +8,9 @@ import {
 } from "@/components/StatusBadge";
 import { TransactionButton } from "@/components/TransactionButton";
 import { AgentBadge } from "@/components/AgentBadge";
+import { ConsensusTracker } from "@/components/ConsensusTracker";
+import { useAgentActivity } from "@/hooks/useAgentActivity";
+import { useAgentWallets } from "@/hooks/useAgentWallets";
 import { DisputePanel } from "./DisputePanel";
 import { ResolvePanel } from "./ResolvePanel";
 
@@ -19,6 +22,8 @@ export default function AgreementDetail({
   const { id } = use(params);
   const { address } = useWallet();
   const { agreement, milestones, loading, error, refetch } = useAgreement(id);
+  const agentTxs = useAgentActivity(id);
+  const { agentName } = useAgentWallets();
 
   if (loading) {
     return (
@@ -90,6 +95,26 @@ export default function AgreementDetail({
           </div>
         </div>
       </div>
+
+      {/* Agent Activity */}
+      {agentTxs.length > 0 && (
+        <div className="space-y-3 mb-6">
+          {agentTxs.map((tx) => (
+            <div key={tx.txHash} className="glass-card rounded-xl p-5">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 bg-violet-500 rounded-full animate-pulse" />
+                <span className="text-sm font-medium">
+                  Agent {agentName(tx.wallet) || tx.wallet}
+                </span>
+                <span className="text-xs text-white/40">
+                  is running <span className="text-violet-400">{tx.action.replace("_", " ")}</span>
+                </span>
+              </div>
+              <ConsensusTracker status={tx.consensus} />
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* Actions bar */}
       {agreement.status === 0 && isProvider && (

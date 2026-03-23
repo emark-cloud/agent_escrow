@@ -1,46 +1,45 @@
 "use client";
+import { useState } from "react";
 import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
-import { useAgreementList } from "@/hooks/useAgreement";
+import { useAgreementList, useAllAgreements } from "@/hooks/useAgreement";
 import { AgreementStatusBadge } from "@/components/StatusBadge";
 import { AgentBadge } from "@/components/AgentBadge";
 
 export default function AgreementsList() {
   const { address, isConnected, openModal: connect } = useWallet();
-  const { agreements, loading, error } = useAgreementList(address);
-
-  if (!isConnected) {
-    return (
-      <div className="max-w-6xl mx-auto px-6 py-20 text-center">
-        <h1 className="text-3xl font-bold mb-4">My Agreements</h1>
-        <p className="text-white/40 mb-8">
-          Connect your wallet to view your agreements.
-        </p>
-        <button
-          onClick={connect}
-          className="px-6 py-3 bg-violet-600 hover:bg-violet-500 rounded-lg font-semibold transition-colors"
-        >
-          Connect Wallet
-        </button>
-      </div>
-    );
-  }
+  const [showAll, setShowAll] = useState(true);
+  const myAgreements = useAgreementList(showAll ? null : (address ?? null));
+  const allAgreements = useAllAgreements(showAll);
+  const { agreements, loading, error } = showAll ? allAgreements : myAgreements;
 
   return (
     <div className="max-w-6xl mx-auto px-6 py-12">
       <div className="flex items-center justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold">My Agreements</h1>
+          <h1 className="text-3xl font-bold">
+            {showAll ? "All Agreements" : "My Agreements"}
+          </h1>
           <p className="text-white/40 text-sm mt-1">
-            Agreements where you are client or provider
+            {showAll
+              ? "All agreements on the contract"
+              : "Agreements where you are client or provider"}
           </p>
         </div>
-        <Link
-          href="/create"
-          className="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-lg font-medium text-sm transition-colors"
-        >
-          + New Agreement
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setShowAll(!showAll)}
+            className="px-4 py-2 text-xs bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg transition-colors"
+          >
+            {showAll ? "Show Mine" : "Show All"}
+          </button>
+          <Link
+            href="/create"
+            className="px-5 py-2.5 bg-violet-600 hover:bg-violet-500 rounded-lg font-medium text-sm transition-colors"
+          >
+            + New Agreement
+          </Link>
+        </div>
       </div>
 
       {error && (

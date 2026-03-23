@@ -3,7 +3,8 @@ import { checkApiKey, getWalletForRequest, isErrorResponse, validateNoPipes } fr
 import {
   readContract,
   serverWriteContract,
-  serverWaitForConsensus,
+  serverWaitForConsensusTracked,
+  consensusResultResponse,
 } from "@/lib/server/genlayer-server";
 import type { Agreement } from "@/types/agreement";
 
@@ -86,8 +87,12 @@ export async function POST(req: NextRequest) {
 
     const wait = req.nextUrl.searchParams.get("wait") === "true";
     if (wait) {
-      const result = await serverWaitForConsensus(txHash);
-      return NextResponse.json(result);
+      const result = await serverWaitForConsensusTracked(txHash, {
+        agreementId: agreement_id,
+        action: "create",
+        wallet: req.headers.get("x-wallet-id") || "unknown",
+      });
+      return consensusResultResponse(result);
     }
 
     return NextResponse.json({ txHash });

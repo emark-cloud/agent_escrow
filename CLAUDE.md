@@ -9,6 +9,8 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `frontend/` — Next.js 16 + TypeScript + TailwindCSS app
 - `frontend/lib/internetCourtCode.ts` — IC contract (embedded, deployed from frontend). **Authoritative copy** — `contracts/InternetCourt.py` is synced from this.
 - `mcp/` — MCP server for AI agent integration (13 tools)
+- `frontend/lib/server/agentStore.ts` — Runtime agent wallet store (reads/writes `agents.json`)
+- `frontend/lib/server/txActivity.ts` — Active transaction tracking for agent consensus UI
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `GUIDELINES.md` — GenLayer development patterns reference
 
@@ -56,10 +58,14 @@ Deployed from frontend at runtime. Resolves disputes via AI jury consensus.
 Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-key` header + `x-wallet-id` header for writes. Optional `?wait=true` for synchronous consensus.
 
 **Endpoints:**
-- `GET /api/health` — Public. Returns contract address, chain config, RPC status.
+- `GET /api/health` — Public. Returns contract address, chain config, RPC status, agent wallets.
 - `GET /api/agreements` — List all (or `?address=0x...` to filter)
 - `GET /api/agreements/:id` — Single agreement with milestones
+- `GET /api/agreements/:id/activity` — Active agent transactions (for live consensus tracking)
 - `GET /api/portfolio?address=0x...` — Batch read: all agreements + milestones + actionable items
+- `GET /api/agents` — List agent wallets (name + address, no private keys)
+- `POST /api/agents` — Add agent wallet `{ name, privateKey }`
+- `DELETE /api/agents` — Remove agent wallet `{ name }` (config-based only)
 - `POST /api/agreements` — Create agreement
 - `POST /api/agreements/:id/accept` — Accept agreement
 - `POST /api/agreements/:id/check-sla` — Run AI SLA check
@@ -71,11 +77,29 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `POST /api/agreements/:id/refund` — Refund failed milestone
 - `POST /api/agreements/:id/cancel` — Cancel agreement
 
+### Consensus Result & Execution Errors
+With `?wait=true`, all write endpoints return a `ConsensusResult`. On GenLayer, a transaction can be ACCEPTED by consensus but the contract execution can still fail (validators agreed on the error). The API now detects this:
+- **HTTP 200** — Consensus reached AND contract execution succeeded
+- **HTTP 422** — Consensus reached BUT contract execution failed. Response includes `executionError` field.
+- **HTTP 500** — Consensus failed (UNDETERMINED, DISMISSED, timeout)
+
+Agents should check for `executionError` in the response or HTTP status >= 400.
+
 ### MCP Server (`mcp/`)
 Same capabilities as REST API. 13 tools: `get_agreement`, `list_agreements`, `create_agreement`, `accept_agreement`, `check_sla`, `verify_milestone`, `release_payment`, `dispute_milestone`, `submit_evidence`, `resolve_dispute`, `cancel_agreement`, `refund_milestone`, `check_portfolio`.
 
 ### SKILL.md
 Complete agent onboarding doc with curl examples, error handling, heartbeat pattern, and two-agent flow walkthrough. Agents that aren't MCP-compatible use this.
+
+### Agent Wallet Management
+Agent wallets can be configured two ways:
+1. **Environment variables** (`WALLET_ALICE=0x...` in `.env.local`) — immutable at runtime, shown as "env" source
+2. **Runtime config** (`frontend/agents.json`) — managed via `/agents` UI or `GET/POST/DELETE /api/agents`
+
+`getWalletForRequest()` in `auth.ts` checks env vars first, then falls back to `agents.json`. The health endpoint merges both sources.
+
+### Agent Transaction Activity
+When agents use `?wait=true`, the server tracks active transactions in `tx-activity.json`. The agreement detail page polls `/api/agreements/:id/activity` and shows live ConsensusTracker progress for agent-initiated transactions.
 
 ### Auth & Security
 - API key compared with `crypto.timingSafeEqual` (timing-safe)
@@ -94,13 +118,19 @@ npm run dev
 ### Key Frontend Files
 - `lib/config.ts` — Chain config, contract addresses, status labels, separate color maps for agreement vs milestone status
 - `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking)
-- `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`)
-- `lib/server/genlayer-server.ts` — Server-side contract interaction
+- `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`), wallet resolution (env + agents.json)
+- `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking with execution error detection
+- `lib/server/agentStore.ts` — Agent wallet CRUD (`agents.json`)
+- `lib/server/txActivity.ts` — Active transaction tracking (`tx-activity.json`)
 - `lib/internetCourtCode.ts` — IC contract source code (deployed from browser)
 - `lib/errors.ts` — User-friendly error mapping
 - `components/ConsensusTracker.tsx` — Live validator progress UI
 - `components/TransactionButton.tsx` — Reusable tx button with consensus tracking
 - `components/StatusBadge.tsx` — Uses `AGREEMENT_STATUS_COLORS` for agreements, `STATUS_COLORS` for milestones
+- `components/AgentBadge.tsx` — Shows agent name badge next to addresses
+- `hooks/useAgentWallets.tsx` — Context provider for agent wallet lookup (fetched from `/api/health`)
+- `hooks/useAgentActivity.ts` — Polls active agent transactions for live consensus display
+- `app/agents/page.tsx` — Agent wallet management UI
 - `app/agreements/[id]/ResolvePanel.tsx` — Internet Court dispute resolution UI
 
 ## GenLayer Patterns

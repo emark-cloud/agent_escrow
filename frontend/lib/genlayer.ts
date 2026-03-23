@@ -354,7 +354,9 @@ export async function getConsensusStatus(
       proposing: "Leader validator is executing your transaction...",
       committing: `Validators voting: ${committed}/5 committed. Almost there.`,
       revealing: `Validators revealing votes: ${revealed}/5. Nearly done.`,
-      accepted: "Consensus reached! State updated.",
+      accepted: resultName === "DISAGREE"
+        ? "Consensus reached, but contract execution failed. Check inputs."
+        : "Consensus reached! State updated.",
       finalized: "Fully finalized on chain.",
       leader_timeout: "Leader timed out. Network will rotate to a new leader. If stuck, resubmit the transaction.",
       failed: "Transaction failed. Try resubmitting.",

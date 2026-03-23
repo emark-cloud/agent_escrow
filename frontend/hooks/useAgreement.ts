@@ -115,3 +115,58 @@ export function useAgreementList(address: string | null) {
 
   return { agreements, loading, error, refetch: fetch };
 }
+
+export function useAllAgreements(enabled: boolean) {
+  const [agreements, setAgreements] = useState<Agreement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const fetch = useCallback(async () => {
+    if (!enabled) {
+      setAgreements([]);
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      const raw = await readContract<string>("get_all_agreement_ids", []);
+      const ids = raw ? (Array.isArray(raw) ? raw : raw.split(",")) : [];
+      const uniqueIds = [...new Set(ids.filter(Boolean))];
+
+      const results = await Promise.all(
+        uniqueIds.map(async (id) => {
+          try {
+            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id]);
+            return {
+              agreement_id: String(agRaw.agreement_id ?? ""),
+              client: String(agRaw.client ?? ""),
+              provider: String(agRaw.provider ?? ""),
+              description: String(agRaw.description ?? ""),
+              total_amount: Number(agRaw.total_amount ?? 0),
+              milestone_count: Number(agRaw.milestone_count ?? 0),
+              status: Number(agRaw.status ?? 0),
+              court_case_id: String(agRaw.court_case_id ?? ""),
+            } as Agreement;
+          } catch {
+            return null;
+          }
+        })
+      );
+      setAgreements(results.filter((r): r is Agreement => r !== null));
+      setError(null);
+    } catch (err) {
+      setAgreements([]);
+      setError(err instanceof Error ? err.message : "Failed to load agreements");
+    } finally {
+      setLoading(false);
+    }
+  }, [enabled]);
+
+  useEffect(() => {
+    fetch();
+    const interval = setInterval(fetch, 10000);
+    return () => clearInterval(interval);
+  }, [fetch]);
+
+  return { agreements, loading, error, refetch: fetch };
+}
