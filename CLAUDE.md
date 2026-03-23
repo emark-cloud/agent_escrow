@@ -44,9 +44,11 @@ Deployed on **Bradbury testnet**. Contract address is in `frontend/lib/config.ts
 Returns a **comma-separated string**, not a list. All `readContract` wrappers (client-side, server-side, MCP) automatically split this into `string[]`. If calling the contract directly, split the result: `result ? result.split(",") : []`.
 
 ### Internet Court (IC) Contract
-Deployed from frontend at runtime. Resolves disputes via AI jury consensus.
+Deployed from frontend or via API at runtime. Resolves disputes via AI jury consensus.
 
 **Flow:** Deploy IC → Accept (other party) → Initiate Dispute → Submit Evidence (both parties, separate txs) → Resolve (triggers AI jury) → Apply Verdict to Escrow
+
+**API flow:** All steps available via `POST /api/agreements/:id/court` with `action` field: `deploy`, `accept`, `initiate`, `submit_evidence`, `resolve`, `apply_verdict`, `status`. Agents can run the full dispute flow without a browser.
 
 **Critical:** Evidence submission and AI resolution must be separate transactions. If combined, LLM failure reverts the evidence storage.
 
@@ -76,14 +78,18 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `POST /api/agreements/:id/resolve` — Apply IC verdict
 - `POST /api/agreements/:id/refund` — Refund failed milestone
 - `POST /api/agreements/:id/cancel` — Cancel agreement
+- `POST /api/agreements/:id/court` — Internet Court actions (`action`: deploy, accept, initiate, submit_evidence, resolve, apply_verdict, status)
 
 ### Consensus Result & Execution Errors
 With `?wait=true`, all write endpoints return a `ConsensusResult`. On GenLayer, a transaction can be ACCEPTED by consensus but the contract execution can still fail (validators agreed on the error). The API now detects this:
 - **HTTP 200** — Consensus reached AND contract execution succeeded
-- **HTTP 422** — Consensus reached BUT contract execution failed. Response includes `executionError` field.
-- **HTTP 500** — Consensus failed (UNDETERMINED, DISMISSED, timeout)
+- **HTTP 422** — Consensus reached BUT contract execution failed. Response includes `executionError` field. Detected via `lastRound.validatorVotesName` all being "DISAGREE".
+- **HTTP 500** — Consensus failed (UNDETERMINED, DISMISSED, timeout) or RPC error
 
 Agents should check for `executionError` in the response or HTTP status >= 400.
+
+### RPC Resilience
+Bradbury RPC can drop connections during long consensus polls. The server retries transient "fetch failed" errors automatically — only consensus-level failures (UNDETERMINED, DISMISSED, timeout) are thrown. If an API call errors with an RPC message, the transaction may still have gone through — check agreement state before retrying.
 
 ### MCP Server (`mcp/`)
 Same capabilities as REST API. 13 tools: `get_agreement`, `list_agreements`, `create_agreement`, `accept_agreement`, `check_sla`, `verify_milestone`, `release_payment`, `dispute_milestone`, `submit_evidence`, `resolve_dispute`, `cancel_agreement`, `refund_milestone`, `check_portfolio`.
@@ -119,10 +125,10 @@ npm run dev
 - `lib/config.ts` — Chain config, contract addresses, status labels, separate color maps for agreement vs milestone status
 - `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking)
 - `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`), wallet resolution (env + agents.json)
-- `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking with execution error detection
+- `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking, execution error detection, IC deployment/interaction
 - `lib/server/agentStore.ts` — Agent wallet CRUD (`agents.json`)
 - `lib/server/txActivity.ts` — Active transaction tracking (`tx-activity.json`)
-- `lib/internetCourtCode.ts` — IC contract source code (deployed from browser)
+- `lib/internetCourtCode.ts` — IC contract source code (deployed from browser or API)
 - `lib/errors.ts` — User-friendly error mapping
 - `components/ConsensusTracker.tsx` — Live validator progress UI
 - `components/TransactionButton.tsx` — Reusable tx button with consensus tracking
