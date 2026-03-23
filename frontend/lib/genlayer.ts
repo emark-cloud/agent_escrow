@@ -332,6 +332,8 @@ export async function getConsensusStatus(
     const resultName = (tx as any).resultName as string;
     const committed = Number((tx as any).lastRound?.votesCommitted ?? 0);
     const revealed = Number((tx as any).lastRound?.votesRevealed ?? 0);
+    const validatorVotes: string[] = (tx as any).lastRound?.validatorVotesName ?? [];
+    const allDisagree = validatorVotes.length > 0 && validatorVotes.every((v: string) => v === "DISAGREE");
 
     const stageMap: Record<string, ConsensusStatus["stage"]> = {
       PENDING: "pending",
@@ -354,8 +356,8 @@ export async function getConsensusStatus(
       proposing: "Leader validator is executing your transaction...",
       committing: `Validators voting: ${committed}/5 committed. Almost there.`,
       revealing: `Validators revealing votes: ${revealed}/5. Nearly done.`,
-      accepted: resultName === "DISAGREE"
-        ? "Consensus reached, but contract execution failed. Check inputs."
+      accepted: allDisagree
+        ? "Consensus reached, but contract execution failed. Check preconditions."
         : "Consensus reached! State updated.",
       finalized: "Fully finalized on chain.",
       leader_timeout: "Leader timed out. Network will rotate to a new leader. If stuck, resubmit the transaction.",

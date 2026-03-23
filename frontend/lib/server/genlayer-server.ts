@@ -139,6 +139,138 @@ export async function serverWriteContract(
   return txHash;
 }
 
+export async function serverDeployContract(
+  privateKey: Hex,
+  code: string,
+  args: CalldataEncodable[]
+): Promise<string> {
+  const account = privateKeyToAccount(privateKey);
+
+  const walletClient = createWalletClient({
+    account,
+    chain: genlayerChain,
+    transport: http(GENLAYER_CONFIG.rpcUrl),
+  });
+
+  const calldataObj = calldata.makeCalldataObject(undefined, args, undefined);
+  const encodedCalldata = calldata.encode(calldataObj);
+  const serializedData = transactions.serialize([
+    code,
+    encodedCalldata,
+    false,
+  ]) as Hex;
+
+  const zeroAddress = "0x0000000000000000000000000000000000000000" as Address;
+
+  const txData = encodeFunctionData({
+    abi: CONSENSUS_ABI,
+    functionName: "addTransaction",
+    args: [
+      account.address,
+      zeroAddress,
+      BigInt(5),
+      BigInt(3),
+      serializedData,
+      BigInt(0),
+    ],
+  });
+
+  const txHash = await walletClient.sendTransaction({
+    to: GENLAYER_CONFIG.consensusContract,
+    data: txData,
+    gas: BigInt(20_000_000),
+  });
+
+  return txHash;
+}
+
+export async function serverWriteContractAt(
+  privateKey: Hex,
+  contractAddress: string,
+  functionName: string,
+  args: CalldataEncodable[]
+): Promise<string> {
+  const account = privateKeyToAccount(privateKey);
+
+  const walletClient = createWalletClient({
+    account,
+    chain: genlayerChain,
+    transport: http(GENLAYER_CONFIG.rpcUrl),
+  });
+
+  const calldataObj = calldata.makeCalldataObject(functionName, args, undefined);
+  const encodedCalldata = calldata.encode(calldataObj);
+  const serializedData = transactions.serialize([
+    encodedCalldata,
+    false,
+  ]) as Hex;
+
+  const txData = encodeFunctionData({
+    abi: CONSENSUS_ABI,
+    functionName: "addTransaction",
+    args: [
+      account.address,
+      contractAddress as Address,
+      BigInt(5),
+      BigInt(3),
+      serializedData,
+      BigInt(0),
+    ],
+  });
+
+  const txHash = await walletClient.sendTransaction({
+    to: GENLAYER_CONFIG.consensusContract,
+    data: txData,
+    gas: BigInt(5_000_000),
+  });
+
+  return txHash;
+}
+
+export async function serverGetDeployedAddress(
+  l1TxHash: string,
+  maxRetries = 60,
+  interval = 5000
+): Promise<string | null> {
+  const glTxId = await serverGetGenLayerTxId(l1TxHash);
+  if (!glTxId) return null;
+
+  const client = createReadClient();
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const tx = await client.getTransaction({
+        hash: glTxId as unknown as Parameters<typeof client.getTransaction>[0]["hash"],
+      });
+      const addr =
+        (tx as any)?.recipient ??
+        (tx as any)?.to_address ??
+        (tx as any)?.contractAddress ??
+        null;
+      if (addr && addr !== "0x0000000000000000000000000000000000000000") {
+        return addr;
+      }
+    } catch {
+      // not available yet
+    }
+    await new Promise((r) => setTimeout(r, interval));
+  }
+  return null;
+}
+
+export async function serverReadContractAt<T>(
+  contractAddress: string,
+  functionName: string,
+  args: CalldataEncodable[] = []
+): Promise<T> {
+  const client = createReadClient();
+  const raw = await client.readContract({
+    address: contractAddress as Address,
+    functionName,
+    args,
+  });
+  return mapToObject(raw) as T;
+}
+
 export async function serverGetGenLayerTxId(
   l1TxHash: string
 ): Promise<string | null> {
@@ -203,19 +335,21 @@ export async function serverWaitForConsensus(
       const statusName = (tx as any).statusName as string;
 
       if (statusName === "ACCEPTED" || statusName === "FINALIZED") {
-        // Check if the contract execution itself errored
-        const resultName = (tx as any).resultName as string | undefined;
-        const leaderReceipt = (tx as any).leaderReceipt ?? (tx as any).leader_receipt;
-        const executionError =
-          leaderReceipt?.error ??
-          leaderReceipt?.executionError ??
-          ((tx as any).error as string | undefined);
+        // Check if the contract execution failed.
+        // On Bradbury, resultName "AGREE" means validators reached consensus,
+        // but individual votes can be "DISAGREE" (they agreed the execution errored).
+        // All validators voting DISAGREE = contract raised an error.
+        const lastRound = (tx as any).lastRound;
+        const votes: string[] = lastRound?.validatorVotesName ?? [];
+        const allDisagree = votes.length > 0 && votes.every((v: string) => v === "DISAGREE");
 
-        if (executionError || (resultName && resultName !== "AGREE" && resultName !== "IDLE")) {
-          const errorMsg = executionError
-            ? String(executionError)
-            : `Contract execution result: ${resultName}`;
-          return { txHash: l1TxHash, glTxId, status: statusName, executionError: errorMsg };
+        if (allDisagree) {
+          return {
+            txHash: l1TxHash,
+            glTxId,
+            status: statusName,
+            executionError: "Contract execution failed — all validators rejected the transaction. Check preconditions (agreement status, milestone state, permissions).",
+          };
         }
 
         return { txHash: l1TxHash, glTxId, status: statusName };
@@ -229,10 +363,13 @@ export async function serverWaitForConsensus(
         throw new Error("Leader timed out. Please resubmit.");
       }
     } catch (e) {
-      if (e instanceof Error && (e.message.includes("failed") || e.message.includes("timed out"))) {
-        throw e;
+      if (e instanceof Error) {
+        // Re-throw consensus failures, but NOT RPC/network errors
+        const msg = e.message;
+        const isConsensusFail = msg.startsWith("Transaction failed:") || msg === "Leader timed out. Please resubmit.";
+        if (isConsensusFail) throw e;
       }
-      // not available yet
+      // RPC error or tx not available yet — retry
     }
     await new Promise((r) => setTimeout(r, interval));
   }
