@@ -98,9 +98,9 @@ export default function Home() {
               Internet Court disputes
             </h3>
             <p className="text-white/40 leading-relaxed">
-              When SLA checks fail, either party can escalate to Internet Court
-              on Base Sepolia. An AI jury evaluates the evidence and delivers a
-              binding verdict, automatically settling the escrow.
+              When SLA checks fail, either party can escalate to Internet Court.
+              An AI jury evaluates the evidence and delivers a binding verdict,
+              automatically settling the escrow.
             </p>
           </div>
         </div>

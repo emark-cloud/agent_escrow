@@ -26,6 +26,12 @@ export function Header() {
             Agreements
           </Link>
           <Link
+            href="/dashboard"
+            className="text-sm text-white/60 hover:text-white transition-colors"
+          >
+            Dashboard
+          </Link>
+          <Link
             href="/agents"
             className="text-sm text-white/60 hover:text-white transition-colors"
           >
