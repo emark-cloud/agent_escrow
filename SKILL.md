@@ -1,6 +1,6 @@
 # AgentEscrow — Agent Integration Skill File
 
-> **Version:** 1.0.0
+> **Version:** 2.0.0
 > **Contract:** `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3`
 > **Chain:** GenLayer Bradbury Testnet (chainId 4221)
 
@@ -39,7 +39,24 @@ All endpoints (except `/api/health`) require:
 | Header | Required | Description |
 |--------|----------|-------------|
 | `x-api-key` | Yes | API key (matches `API_KEY` env var on server) |
-| `x-wallet-id` | Write ops only | Named wallet (e.g. `alice`). Maps to `WALLET_ALICE` env var on server. |
+| `x-wallet-id` | Write ops only | Named wallet (e.g. `alice`). Maps to `WALLET_ALICE` env var or `agents.json` runtime config. |
+
+### Agent Wallet Management
+
+Wallets can be configured via env vars (`WALLET_ALICE=0x...`) or at runtime via the API:
+
+```bash
+# List all agent wallets (name + address only, no keys exposed)
+curl -H "x-api-key: YOUR_KEY" http://localhost:3000/api/agents
+
+# Add a new agent wallet
+curl -X POST http://localhost:3000/api/agents -H "x-api-key: YOUR_KEY" -H "Content-Type: application/json" -d '{"name": "alice", "privateKey": "0x..."}'
+
+# Remove a runtime-configured wallet
+curl -X DELETE http://localhost:3000/api/agents -H "x-api-key: YOUR_KEY" -H "Content-Type: application/json" -d '{"name": "alice"}'
+```
+
+Env-based wallets cannot be removed via API. Runtime wallets are stored in `agents.json`.
 
 ## Consensus
 
@@ -49,6 +66,27 @@ GenLayer write operations go through validator consensus (takes 30-90 seconds). 
 - **Wait mode:** Append `?wait=true` to any write endpoint. Blocks until ACCEPTED/FINALIZED or error.
 
 **Recommendation:** Use `?wait=true` for sequential operations. Do NOT send rapid-fire writes to the same contract — wait for each to be accepted before the next.
+
+### Execution Errors
+
+A transaction can be ACCEPTED by consensus but the contract logic can still fail (e.g. preconditions not met). The API detects this:
+
+- **HTTP 200** — Success. Contract state changed.
+- **HTTP 422** — Consensus reached but contract execution failed. Response includes `executionError` field. **Always check for this.**
+- **HTTP 500** — Consensus or RPC failure.
+
+```json
+{
+  "txHash": "0x...",
+  "glTxId": "0x...",
+  "status": "ACCEPTED",
+  "executionError": "Contract execution failed — all validators rejected the transaction. Check preconditions."
+}
+```
+
+### RPC Resilience
+
+Bradbury RPC can drop connections during long polls. The server retries automatically. If you get an RPC error, the transaction may still have gone through — **check agreement state before retrying**.
 
 ---
 
@@ -60,7 +98,7 @@ GenLayer write operations go through validator consensus (takes 30-90 seconds). 
 ```bash
 curl http://localhost:3000/api/health
 ```
-No auth required. Returns chain config and RPC status.
+No auth required. Returns chain config, RPC status, and configured agent wallets (`agentWallets` field).
 
 #### List All Agreements
 ```bash
@@ -217,6 +255,57 @@ curl -X POST http://localhost:3000/api/agreements/sla-2024-001/cancel?wait=true 
 
 Only works before the agreement is accepted.
 
+### Internet Court (Dispute Resolution)
+
+All IC actions go through `POST /api/agreements/:id/court` with an `action` field. This enables agents to resolve disputes without a browser.
+
+#### Deploy IC Contract
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "deploy", "milestone_index": 0}'
+```
+Returns `courtAddress` — save it for all subsequent steps. Takes 1-2 min (contract deployment).
+
+#### Accept IC Case (other party)
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: bob" -H "Content-Type: application/json" -d '{"action": "accept", "court_address": "0xCOURT_ADDRESS"}'
+```
+
+#### Initiate Dispute on IC
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "initiate", "court_address": "0xCOURT_ADDRESS"}'
+```
+
+#### Submit Evidence to IC (both parties, separate calls)
+```bash
+# Client submits
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "submit_evidence", "court_address": "0xCOURT_ADDRESS", "evidence": "All SLA checks failed. Service was unreachable."}'
+
+# Provider submits
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: bob" -H "Content-Type: application/json" -d '{"action": "submit_evidence", "court_address": "0xCOURT_ADDRESS", "evidence": "Service was operational. Check failures were due to validator network issues."}'
+```
+
+#### Check IC Case Status
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "status", "court_address": "0xCOURT_ADDRESS"}'
+```
+Returns `case` (status, verdict, reasoning) and `evidence` (evidence_a, evidence_b). **Use this after each step to verify state changed.**
+
+#### Trigger AI Jury Resolution
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "resolve", "court_address": "0xCOURT_ADDRESS"}'
+```
+Takes 1-2 min. AI jury evaluates evidence and delivers a verdict.
+
+#### Apply Verdict to Escrow
+```bash
+curl -X POST http://localhost:3000/api/agreements/sla-2024-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "apply_verdict", "court_address": "0xCOURT_ADDRESS", "milestone_index": 0}'
+```
+Reads the IC verdict and applies it to the escrow contract. Returns `verdict` and `reasoning`.
+
+- `PARTY_A` → Client wins → Milestone set to FAILED (then refund)
+- `PARTY_B` → Provider wins → Milestone set to PAID
+- `UNDETERMINED` → Inconclusive → Milestone returns to MONITORING (or FAILED after 2+ disputes)
+
 ---
 
 ## Two-Agent Flow Example
@@ -281,6 +370,43 @@ curl -X POST http://localhost:3000/api/agreements/agent-deal-001/release?wait=tr
   -H "Content-Type: application/json" \
   -d '{ "milestone_index": 0 }'
 ```
+
+### 6. If SLA checks fail — dispute flow
+
+If SLA checks consistently fail, the client can dispute and resolve via Internet Court:
+
+```bash
+# Dispute the milestone
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/dispute?wait=true -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"milestone_index": 0, "reason": "SLA checks all failed - service unreachable"}'
+
+# Deploy Internet Court
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "deploy", "milestone_index": 0}'
+# → save courtAddress from response
+
+# Provider accepts IC case
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: bob" -H "Content-Type: application/json" -d '{"action": "accept", "court_address": "0xCOURT"}'
+
+# Initiate dispute on IC
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "initiate", "court_address": "0xCOURT"}'
+
+# Both parties submit evidence (one at a time, wait between)
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "submit_evidence", "court_address": "0xCOURT", "evidence": "All SLA checks failed."}'
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: bob" -H "Content-Type: application/json" -d '{"action": "submit_evidence", "court_address": "0xCOURT", "evidence": "Service was up. Validator network issue."}'
+
+# Trigger AI jury
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "resolve", "court_address": "0xCOURT"}'
+
+# Check verdict
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "status", "court_address": "0xCOURT"}'
+
+# Apply verdict to escrow
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/court -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"action": "apply_verdict", "court_address": "0xCOURT", "milestone_index": 0}'
+
+# If client won (PARTY_A), refund
+curl -X POST http://localhost:3000/api/agreements/agent-deal-001/refund?wait=true -H "x-api-key: YOUR_KEY" -H "x-wallet-id: alice" -H "Content-Type: application/json" -d '{"milestone_index": 0}'
+```
+
+**Important:** Run each step sequentially. Check IC status after each step to verify state changed before proceeding.
 
 ---
 
@@ -351,7 +477,8 @@ done
 |--------|---------|--------|
 | 401 | Invalid or missing API key | Check `x-api-key` header |
 | 400 | Missing required field or wallet | Check request body and `x-wallet-id` header |
-| 500 | Contract or chain error | See error message for details |
+| 422 | Consensus reached but contract execution failed | Check `executionError` field. Verify preconditions (status, permissions). |
+| 500 | Contract, chain, or RPC error | See error message. If RPC error, check state — tx may have gone through. |
 
 ### GenLayer Consensus Errors (in response body when using `?wait=true`)
 | Error | Meaning | Action |
@@ -366,4 +493,7 @@ done
 - Always use `?wait=true` for sequential operations
 - Wait for each transaction to complete before sending the next
 - If a transaction fails with UNDETERMINED or timeout, it's safe to retry
+- **Always check for `executionError` in responses** — HTTP 200 without this field means true success
+- If you get an RPC error, check agreement state before retrying — the tx may have succeeded
+- Use the IC `status` action after each court step to verify state changed
 - Check the portfolio endpoint to verify state after errors
