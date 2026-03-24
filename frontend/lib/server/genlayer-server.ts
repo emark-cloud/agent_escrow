@@ -360,7 +360,9 @@ export async function serverWaitForConsensus(
       }
 
       if (statusName === "LEADER_TIMEOUT" && i > 30) {
-        throw new Error("Leader timed out. Please resubmit.");
+        const err = new Error("Leader timed out. Please resubmit.");
+        (err as any).retryable = true;
+        throw err;
       }
     } catch (e) {
       if (e instanceof Error) {
@@ -374,7 +376,9 @@ export async function serverWaitForConsensus(
     await new Promise((r) => setTimeout(r, interval));
   }
 
-  throw new Error("Transaction timed out");
+  const err = new Error("Transaction timed out");
+  (err as any).retryable = true;
+  throw err;
 }
 
 // --- Response helper ---
@@ -386,6 +390,77 @@ export function consensusResultResponse(result: ConsensusResult): NextResponse {
     return NextResponse.json(result, { status: 422 });
   }
   return NextResponse.json(result);
+}
+
+// --- Retryable write+wait ---
+
+/** Returns true for errors that should trigger a full resubmit (new tx). */
+function isRetryableError(e: unknown): boolean {
+  if (e instanceof Error) {
+    if ((e as any).retryable) return true;
+    const msg = e.message.toLowerCase();
+    // RPC connectivity issues — tx may not have gone through
+    if (msg.includes("fetch failed") || msg.includes("econnrefused") || msg.includes("econnreset")) return true;
+  }
+  return false;
+}
+
+/**
+ * Write a contract call and wait for consensus, with automatic retries on
+ * transient failures (leader timeout, RPC errors). Resubmits a fresh tx on
+ * each retry so we don't poll a dead transaction.
+ */
+export async function serverWriteAndWait(
+  privateKey: Hex,
+  functionName: string,
+  args: CalldataEncodable[],
+  trackingOpts?: TrackedWaitOptions,
+  maxAttempts = 3,
+): Promise<ConsensusResult> {
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const txHash = await serverWriteContract(privateKey, functionName, args);
+      if (trackingOpts) {
+        return await serverWaitForConsensusTracked(txHash, trackingOpts);
+      }
+      return await serverWaitForConsensus(txHash);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt < maxAttempts && isRetryableError(e)) {
+        console.log(`[retry] Attempt ${attempt}/${maxAttempts} failed (${lastError.message}), resubmitting...`);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+  throw lastError;
+}
+
+/**
+ * Deploy a contract and wait for consensus, with automatic retries.
+ */
+export async function serverDeployAndWait(
+  privateKey: Hex,
+  code: string,
+  args: CalldataEncodable[],
+  maxAttempts = 3,
+): Promise<ConsensusResult> {
+  let lastError: Error | undefined;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const txHash = await serverDeployContract(privateKey, code, args);
+      return await serverWaitForConsensus(txHash);
+    } catch (e) {
+      lastError = e instanceof Error ? e : new Error(String(e));
+      if (attempt < maxAttempts && isRetryableError(e)) {
+        console.log(`[retry] Deploy attempt ${attempt}/${maxAttempts} failed (${lastError.message}), resubmitting...`);
+        continue;
+      }
+      throw lastError;
+    }
+  }
+  throw lastError;
 }
 
 // --- Activity-tracked consensus ---

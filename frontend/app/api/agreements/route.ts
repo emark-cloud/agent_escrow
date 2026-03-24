@@ -3,7 +3,7 @@ import { checkApiKey, getWalletForRequest, isErrorResponse, validateNoPipes } fr
 import {
   readContract,
   serverWriteContract,
-  serverWaitForConsensusTracked,
+  serverWriteAndWait,
   consensusResultResponse,
 } from "@/lib/server/genlayer-server";
 import type { Agreement } from "@/types/agreement";
@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
     const ms_criteria = milestones.map((m: any) => m.sla_criteria).join("|");
     const ms_amounts = milestones.map((m: any) => String(m.amount)).join("|");
 
-    const txHash = await serverWriteContract(wallet.privateKey, "create_agreement", [
+    const args = [
       agreement_id,
       provider,
       description,
@@ -83,11 +83,11 @@ export async function POST(req: NextRequest) {
       ms_urls,
       ms_criteria,
       ms_amounts,
-    ]);
+    ];
 
     const wait = req.nextUrl.searchParams.get("wait") === "true";
     if (wait) {
-      const result = await serverWaitForConsensusTracked(txHash, {
+      const result = await serverWriteAndWait(wallet.privateKey, "create_agreement", args, {
         agreementId: agreement_id,
         action: "create",
         wallet: req.headers.get("x-wallet-id") || "unknown",
@@ -95,6 +95,7 @@ export async function POST(req: NextRequest) {
       return consensusResultResponse(result);
     }
 
+    const txHash = await serverWriteContract(wallet.privateKey, "create_agreement", args);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

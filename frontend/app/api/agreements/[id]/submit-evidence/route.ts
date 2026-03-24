@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateMilestoneIndex } from "@/lib/server/auth";
-import { serverWriteContract, serverWaitForConsensusTracked, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
 
 export async function POST(
   req: NextRequest,
@@ -24,15 +24,9 @@ export async function POST(
       return NextResponse.json({ error: "Missing evidence" }, { status: 400 });
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "submit_evidence", [
-      id,
-      msIdx,
-      evidence,
-    ]);
-
     const wait = req.nextUrl.searchParams.get("wait") === "true";
     if (wait) {
-      const result = await serverWaitForConsensusTracked(txHash, {
+      const result = await serverWriteAndWait(wallet.privateKey, "submit_evidence", [id, msIdx, evidence], {
         agreementId: id,
         action: "submit_evidence",
         wallet: req.headers.get("x-wallet-id") || "unknown",
@@ -40,6 +34,7 @@ export async function POST(
       return consensusResultResponse(result);
     }
 
+    const txHash = await serverWriteContract(wallet.privateKey, "submit_evidence", [id, msIdx, evidence]);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

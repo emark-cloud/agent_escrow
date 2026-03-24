@@ -39,6 +39,9 @@ agents.json
 # active transaction tracking
 tx-activity.json
 
+# debug artifacts
+tx-debug.json
+
 # vercel
 .vercel
 

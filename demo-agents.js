@@ -33,6 +33,19 @@ function logSystem(msg) {
   console.log(`${COLORS.dim}${ts}${COLORS.reset} ${COLORS.system}[SYSTEM]${COLORS.reset} ${msg}`);
 }
 
+const MAX_RETRIES = 3;
+
+function isRetryable(status, data) {
+  if (status === 500) {
+    const msg = (data?.error || "").toLowerCase();
+    if (msg.includes("leader timed out") || msg.includes("transaction timed out") ||
+        msg.includes("fetch failed") || msg.includes("econnreset") || msg.includes("econnrefused")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 async function apiCall(method, endpoint, walletId, body) {
   const url = `${BASE_URL}${endpoint}${method === "POST" ? "?wait=true" : ""}`;
   const headers = {
@@ -44,14 +57,32 @@ async function apiCall(method, endpoint, walletId, body) {
   const opts = { method, headers };
   if (body) opts.body = JSON.stringify(body);
 
-  const resp = await fetch(url, opts);
-  const data = await resp.json();
+  let lastError;
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      const resp = await fetch(url, opts);
+      const data = await resp.json();
 
-  if (resp.status >= 400) {
-    const err = data.executionError || data.error || JSON.stringify(data);
-    throw new Error(`HTTP ${resp.status}: ${err}`);
+      if (resp.status >= 400) {
+        if (attempt < MAX_RETRIES && isRetryable(resp.status, data)) {
+          logSystem(`⚠ Transient error (HTTP ${resp.status}), retry ${attempt}/${MAX_RETRIES}...`);
+          continue;
+        }
+        const err = data.executionError || data.error || JSON.stringify(data);
+        throw new Error(`HTTP ${resp.status}: ${err}`);
+      }
+      return data;
+    } catch (e) {
+      lastError = e;
+      // Retry on network-level failures (fetch itself threw)
+      if (attempt < MAX_RETRIES && e.cause?.code) {
+        logSystem(`⚠ Network error (${e.cause.code}), retry ${attempt}/${MAX_RETRIES}...`);
+        continue;
+      }
+      throw e;
+    }
   }
-  return data;
+  throw lastError;
 }
 
 // Pre-written evidence for disputes
@@ -181,14 +212,17 @@ async function main() {
   const health = await apiCall("GET", "/api/health");
   logSystem(`Contract: ${health.contractAddress}`);
 
-  const wallets = health.agentWallets || [];
-  const alice = wallets.find((w) => w.name === "alice");
-  const bob = wallets.find((w) => w.name === "bob");
+  const wallets = health.agentWallets || {};
+  const aliceAddr = wallets.alice;
+  const bobAddr = wallets.bob;
 
-  if (!alice || !bob) {
+  if (!aliceAddr || !bobAddr) {
     logSystem(`${COLORS.error}Need 'alice' and 'bob' agent wallets configured.${COLORS.reset}`);
     process.exit(1);
   }
+
+  const alice = { name: "alice", address: aliceAddr };
+  const bob = { name: "bob", address: bobAddr };
 
   logSystem(`Alice: ${alice.address}`);
   logSystem(`Bob:   ${bob.address}`);

@@ -4,8 +4,14 @@ set -euo pipefail
 # ============================================================================
 # AgentEscrow — Narrated End-to-End Demo
 # Drives two agents (Alice + Bob) through the full lifecycle using curl.
-# Usage: ./demo.sh [BASE_URL]
+# Usage: ./demo.sh [--dispute-only] [BASE_URL]
 # ============================================================================
+
+SKIP_HAPPY=false
+if [ "${1:-}" = "--dispute-only" ]; then
+  SKIP_HAPPY=true
+  shift
+fi
 
 BASE_URL="${1:-http://localhost:3000}"
 API_KEY="${API_KEY:-test}"
@@ -30,35 +36,68 @@ header()  { echo -e "\n${BOLD}════════════════�
 divider() { echo -e "${DIM}───────────────────────────────────────────────${RESET}"; }
 
 # API call wrapper with timing and error detection
+MAX_RETRIES=3
+
+# Check if an error is transient and worth retrying
+is_retryable() {
+  local http_code="$1" response="$2"
+  # 500 with leader timeout or transaction timeout
+  if [ "$http_code" -eq 500 ]; then
+    local err
+    err=$(echo "$response" | jq -r '.error // empty' 2>/dev/null || true)
+    case "$err" in
+      *"Leader timed out"*|*"Transaction timed out"*|*"fetch failed"*|*"ECONNRESET"*|*"ECONNREFUSED"*)
+        return 0 ;;
+    esac
+  fi
+  # curl failures (http_code=000)
+  [ "$http_code" = "000" ] && return 0
+  return 1
+}
+
 api() {
   local method="$1" endpoint="$2" label="$3"
   shift 3
   local body_args=("$@")
-  local start elapsed http_code response
+  local start elapsed http_code response attempt
 
-  waiting "$label"
-  start=$(date +%s)
+  for attempt in $(seq 1 $MAX_RETRIES); do
+    [ "$attempt" -eq 1 ] && waiting "$label" || echo -e "${YELLOW}  ↻ Retry $attempt/$MAX_RETRIES...${RESET}"
+    start=$(date +%s)
 
-  if [ "$method" = "GET" ]; then
-    response=$(curl -s -w "\n%{http_code}" \
-      -H "x-api-key: $API_KEY" \
-      "${BASE_URL}${endpoint}")
-  else
-    response=$(curl -s -w "\n%{http_code}" \
-      -X POST \
-      -H "x-api-key: $API_KEY" \
-      -H "Content-Type: application/json" \
-      "${body_args[@]}" \
-      "${BASE_URL}${endpoint}?wait=true")
-  fi
+    if [ "$method" = "GET" ]; then
+      response=$(curl -s -w "\n%{http_code}" \
+        -H "x-api-key: $API_KEY" \
+        "${BASE_URL}${endpoint}" 2>&1)
+    else
+      response=$(curl -s -w "\n%{http_code}" \
+        -X POST \
+        -H "x-api-key: $API_KEY" \
+        -H "Content-Type: application/json" \
+        "${body_args[@]}" \
+        "${BASE_URL}${endpoint}?wait=true" 2>&1)
+    fi
 
-  http_code=$(echo "$response" | tail -1)
-  response=$(echo "$response" | sed '$d')
-  elapsed=$(( $(date +%s) - start ))
+    http_code=$(echo "$response" | tail -1)
+    response=$(echo "$response" | sed '$d')
+    elapsed=$(( $(date +%s) - start ))
 
-  if [ "$http_code" -ge 400 ]; then
+    # Success
+    if [ "$http_code" -ge 200 ] && [ "$http_code" -lt 400 ]; then
+      success "$label — HTTP $http_code (${elapsed}s)"
+      LAST_RESPONSE="$response"
+      LAST_HTTP="$http_code"
+      return 0
+    fi
+
+    # Retryable failure — try again
+    if [ "$attempt" -lt "$MAX_RETRIES" ] && is_retryable "$http_code" "$response"; then
+      echo -e "${YELLOW}  ⚠ Transient error (HTTP $http_code, ${elapsed}s), will retry...${RESET}"
+      continue
+    fi
+
+    # Non-retryable or last attempt — report failure
     fail "$label — HTTP $http_code (${elapsed}s)"
-    # Check for execution error
     local exec_err
     exec_err=$(echo "$response" | jq -r '.executionError // empty' 2>/dev/null || true)
     if [ -n "$exec_err" ]; then
@@ -69,11 +108,7 @@ api() {
     LAST_RESPONSE="$response"
     LAST_HTTP="$http_code"
     return 1
-  fi
-
-  success "$label — HTTP $http_code (${elapsed}s)"
-  LAST_RESPONSE="$response"
-  LAST_HTTP="$http_code"
+  done
 }
 
 # Show selected fields from last response
@@ -103,9 +138,9 @@ AGENTS=$(echo "$LAST_RESPONSE" | jq -r '.agentWallets // empty')
 echo -e "  ${DIM}Contract:${RESET} $CONTRACT"
 echo -e "  ${DIM}RPC reachable:${RESET} $(echo "$LAST_RESPONSE" | jq -r '.rpcReachable')"
 
-# Extract agent addresses
-ALICE_ADDR=$(echo "$LAST_RESPONSE" | jq -r '.agentWallets[] | select(.name=="alice") | .address' 2>/dev/null || true)
-BOB_ADDR=$(echo "$LAST_RESPONSE" | jq -r '.agentWallets[] | select(.name=="bob") | .address' 2>/dev/null || true)
+# Extract agent addresses (agentWallets is {name: address} object)
+ALICE_ADDR=$(echo "$LAST_RESPONSE" | jq -r '.agentWallets.alice // empty' 2>/dev/null || true)
+BOB_ADDR=$(echo "$LAST_RESPONSE" | jq -r '.agentWallets.bob // empty' 2>/dev/null || true)
 
 if [ -z "$ALICE_ADDR" ] || [ -z "$BOB_ADDR" ]; then
   fail "Need agent wallets 'alice' and 'bob' configured. Check .env.local or /agents UI."
@@ -120,9 +155,12 @@ RUN_ID=$(date +%s | tail -c 7)
 HAPPY_ID="demo-happy-${RUN_ID}"
 DISPUTE_ID="demo-dispute-${RUN_ID}"
 
-echo -e "\n  ${DIM}Happy path ID:${RESET}   $HAPPY_ID"
+if [ "$SKIP_HAPPY" = false ]; then
+  echo -e "\n  ${DIM}Happy path ID:${RESET}   $HAPPY_ID"
+fi
 echo -e "  ${DIM}Dispute path ID:${RESET} $DISPUTE_ID"
 
+if [ "$SKIP_HAPPY" = false ]; then
 # ============================================================================
 header "PHASE 1: Happy Path"
 # ============================================================================
@@ -202,6 +240,7 @@ api GET "/api/portfolio?address=$ALICE_ADDR" "Alice's final portfolio" || true
 echo "$LAST_RESPONSE" | jq '.agreements[] | select(.agreement.agreement_id == "'"$HAPPY_ID"'") | {status: .agreement.statusName, milestones: [.milestones[] | {status: .statusName, passes: .pass_count}]}' 2>/dev/null | sed 's/^/  /'
 
 success "Happy path complete!"
+fi  # end SKIP_HAPPY
 
 # ============================================================================
 header "PHASE 2: Dispute Path"
@@ -273,32 +312,32 @@ narrate "Bob accepts the Internet Court case."
 
 api POST "/api/agreements/$DISPUTE_ID/court" "Bob accepts IC case" \
   -H "x-wallet-id: bob" \
-  -d '{"action": "accept", "milestone_index": 0}' || { fail "IC accept failed"; }
+  -d "{\"action\": \"accept\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\"}" || { fail "IC accept failed"; }
 
 divider
 narrate "Alice initiates the dispute in Internet Court."
 
 api POST "/api/agreements/$DISPUTE_ID/court" "Alice initiates IC dispute" \
   -H "x-wallet-id: alice" \
-  -d '{"action": "initiate", "milestone_index": 0}' || { fail "IC initiate failed"; }
+  -d "{\"action\": \"initiate\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\"}" || { fail "IC initiate failed"; }
 
 divider
 narrate "Both parties submit evidence (separate transactions)..."
 
 api POST "/api/agreements/$DISPUTE_ID/court" "Alice submits evidence" \
   -H "x-wallet-id: alice" \
-  -d '{"action": "submit_evidence", "milestone_index": 0, "evidence": "The SLA criteria requires field nonexistent_xyz_field which does not exist in the GitHub API response. Multiple SLA checks confirmed this. The provider cannot fulfill this requirement."}' || { fail "Alice evidence failed"; }
+  -d "{\"action\": \"submit_evidence\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\", \"evidence\": \"The SLA criteria requires field nonexistent_xyz_field which does not exist in the GitHub API response. Multiple SLA checks confirmed this. The provider cannot fulfill this requirement.\"}" || { fail "Alice evidence failed"; }
 
 api POST "/api/agreements/$DISPUTE_ID/court" "Bob submits evidence" \
   -H "x-wallet-id: bob" \
-  -d '{"action": "submit_evidence", "milestone_index": 0, "evidence": "The GitHub API returns valid JSON with standard fields. The SLA criteria was unreasonable as it required a field that never existed in the API specification."}' || { fail "Bob evidence failed"; }
+  -d "{\"action\": \"submit_evidence\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\", \"evidence\": \"The GitHub API returns valid JSON with standard fields. The SLA criteria was unreasonable as it required a field that never existed in the API specification.\"}" || { fail "Bob evidence failed"; }
 
 divider
 narrate "Triggering AI jury resolution... (this takes longer)"
 
 api POST "/api/agreements/$DISPUTE_ID/court" "AI jury resolves dispute" \
   -H "x-wallet-id: alice" \
-  -d '{"action": "resolve", "milestone_index": 0}' || { fail "IC resolve failed"; }
+  -d "{\"action\": \"resolve\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\"}" || { fail "IC resolve failed"; }
 
 VERDICT=$(echo "$LAST_RESPONSE" | jq -r '.verdict // empty' 2>/dev/null || true)
 if [ -n "$VERDICT" ]; then
@@ -310,7 +349,7 @@ narrate "Applying verdict back to escrow contract..."
 
 api POST "/api/agreements/$DISPUTE_ID/court" "Apply verdict to escrow" \
   -H "x-wallet-id: alice" \
-  -d '{"action": "apply_verdict", "milestone_index": 0}' || { fail "Apply verdict failed"; }
+  -d "{\"action\": \"apply_verdict\", \"milestone_index\": 0, \"court_address\": \"$IC_ADDRESS\"}" || { fail "Apply verdict failed"; }
 
 show_field "status" "Consensus"
 

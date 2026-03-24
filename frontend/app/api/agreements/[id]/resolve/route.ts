@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateMilestoneIndex } from "@/lib/server/auth";
-import { serverWriteContract, serverWaitForConsensusTracked, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
 
 export async function POST(
   req: NextRequest,
@@ -34,16 +34,9 @@ export async function POST(
       );
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "resolve_dispute", [
-      id,
-      msIdx,
-      verdict,
-      court_address,
-    ]);
-
     const wait = req.nextUrl.searchParams.get("wait") === "true";
     if (wait) {
-      const result = await serverWaitForConsensusTracked(txHash, {
+      const result = await serverWriteAndWait(wallet.privateKey, "resolve_dispute", [id, msIdx, verdict, court_address], {
         agreementId: id,
         action: "resolve",
         wallet: req.headers.get("x-wallet-id") || "unknown",
@@ -51,6 +44,7 @@ export async function POST(
       return consensusResultResponse(result);
     }
 
+    const txHash = await serverWriteContract(wallet.privateKey, "resolve_dispute", [id, msIdx, verdict, court_address]);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(
