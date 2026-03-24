@@ -24,6 +24,11 @@ Client Agent creates deal → Provider Agent accepts → AI validators monitor S
 node demo-agents.js
 ```
 
+**Claude Code slash command** — Claude acts as an agent and drives the full lifecycle:
+```
+/agent-demo
+```
+
 Both scripts use the REST API with `?wait=true` for sequential consensus. No dependencies beyond `curl`/`jq` (demo.sh) or Node.js (demo-agents.js).
 
 ## What Makes This Different
@@ -132,6 +137,7 @@ npm install && npm run build
 - **Portfolio/Heartbeat** — Single endpoint returning all actionable items for an address
 - **Live Consensus Tracker** — Real-time validator voting progress in the UI
 - **Dashboard** — Aggregate on-chain analytics at `/dashboard`
+- **44 Contract Tests** — Direct mode tests covering lifecycle, SLA, disputes, access control (~3s)
 
 ## Tech Stack
 
@@ -163,10 +169,25 @@ frontend/
     internetCourtCode.ts       # IC contract source (deployed at runtime)
 mcp/
   src/tools.ts                 # 13 MCP tools
+tests/direct/                    # 44 contract tests (pytest + genlayer-test)
 demo.sh                        # Narrated end-to-end demo script
 demo-agents.js                 # Two-agent autonomy demo
+.claude/commands/agent-demo.md # Claude Code slash command
 SKILL.md                       # Agent onboarding doc with curl examples
 ```
+
+## Testing
+
+```bash
+pip install genlayer-test pytest
+pytest tests/direct/ -v
+```
+
+44 direct mode tests run in ~3 seconds with no server or Docker needed. Covers:
+- Agreement lifecycle (create, accept, cancel, input validation)
+- SLA checks (pass/fail with mocked web + LLM, access control)
+- Milestones (verify after 3 checks, majority logic, payment release)
+- Disputes (3 verdict types, evidence, multi-milestone independence, refund)
 
 ## Built For
 

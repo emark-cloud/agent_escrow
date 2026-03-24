@@ -11,6 +11,10 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `mcp/` — MCP server for AI agent integration (13 tools)
 - `frontend/lib/server/agentStore.ts` — Runtime agent wallet store (reads/writes `agents.json`)
 - `frontend/lib/server/txActivity.ts` — Active transaction tracking for agent consensus UI
+- `tests/direct/` — 44 direct mode contract tests (pytest + genlayer-test)
+- `demo.sh` — Narrated end-to-end demo script (happy path + dispute)
+- `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern)
+- `.claude/commands/agent-demo.md` — Claude Code slash command (`/agent-demo`) for AI agent demo
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `GUIDELINES.md` — GenLayer development patterns reference
 
@@ -75,7 +79,7 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `POST /api/agreements/:id/release` — Release payment
 - `POST /api/agreements/:id/dispute` — Dispute milestone
 - `POST /api/agreements/:id/submit-evidence` — Submit evidence
-- `POST /api/agreements/:id/resolve` — Apply IC verdict
+- `POST /api/agreements/:id/resolve` — Apply IC verdict (legacy, prefer `/court` with `action: apply_verdict`)
 - `POST /api/agreements/:id/refund` — Refund failed milestone
 - `POST /api/agreements/:id/cancel` — Cancel agreement
 - `POST /api/agreements/:id/court` — Internet Court actions (`action`: deploy, accept, initiate, submit_evidence, resolve, apply_verdict, status)
@@ -136,8 +140,37 @@ npm run dev
 - `components/AgentBadge.tsx` — Shows agent name badge next to addresses
 - `hooks/useAgentWallets.tsx` — Context provider for agent wallet lookup (fetched from `/api/health`)
 - `hooks/useAgentActivity.ts` — Polls active agent transactions for live consensus display
+- `app/dashboard/page.tsx` — On-chain analytics dashboard (stats, milestone breakdown, SLA performance)
 - `app/agents/page.tsx` — Agent wallet management UI
 - `app/agreements/[id]/ResolvePanel.tsx` — Internet Court dispute resolution UI
+
+## Testing
+
+### Contract Tests (Direct Mode)
+44 tests covering the full contract surface. Runs in ~3s with no server needed.
+
+```bash
+pip install genlayer-test pytest
+pytest tests/direct/ -v
+```
+
+**Test files:**
+- `tests/direct/test_agreement_lifecycle.py` — Create, accept, cancel, validation, access control (16 tests)
+- `tests/direct/test_sla_and_milestones.py` — SLA checks with mocked web+LLM, verify, release, multi-milestone (12 tests)
+- `tests/direct/test_disputes.py` — Dispute, evidence, resolve (3 verdicts), multi-milestone independence, refund (16 tests)
+- `tests/direct/conftest.py` — Helpers: `addr()` for bytes→hex, `mock_sla_pass/fail()` with gl_call_hook for `prompt_non_comparative`, `create_and_accept()` setup helper
+
+**Direct mode notes:**
+- Fixtures return raw `bytes` addresses — use `addr(direct_bob)` helper to convert to `0x`-prefixed hex for contract `Address()` constructor
+- `gl.eq_principle.prompt_non_comparative` calls `ExecPromptTemplate` which isn't handled natively — use `direct_vm._gl_call_hook` to intercept and return `{"ok": "PASS: ..."}` format
+- View methods return actual dataclass objects (attribute access: `ag.status`), not dicts
+
+### Demo Scripts
+- `./demo.sh` — Narrated curl-based demo (happy path + dispute, colored output, ~10min)
+- `node demo-agents.js` — Two autonomous agents using portfolio heartbeat pattern
+
+### Claude Code Slash Command
+`/agent-demo` — Claude acts as an AI agent, creating and completing a deal via the REST API.
 
 ## GenLayer Patterns
 - See `GUIDELINES.md` for contract storage types, LLM patterns, and frontend integration
