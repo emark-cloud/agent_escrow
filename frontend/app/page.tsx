@@ -32,6 +32,12 @@ export default function Home() {
               >
                 Create Agreement
               </Link>
+              <Link
+                href="/demo"
+                className="px-6 py-3 bg-white/5 hover:bg-white/10 rounded-lg font-semibold border border-white/10 transition-colors"
+              >
+                Run Live Demo
+              </Link>
               {isConnected && (
                 <Link
                   href="/agreements"

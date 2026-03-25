@@ -400,7 +400,8 @@ function isRetryableError(e: unknown): boolean {
     if ((e as any).retryable) return true;
     const msg = e.message.toLowerCase();
     // RPC connectivity issues — tx may not have gone through
-    if (msg.includes("fetch failed") || msg.includes("econnrefused") || msg.includes("econnreset")) return true;
+    if (msg.includes("fetch failed") || msg.includes("econnrefused") || msg.includes("econnreset") ||
+        msg.includes("timed out") || msg.includes("took too long")) return true;
   }
   return false;
 }

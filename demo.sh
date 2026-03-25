@@ -46,7 +46,7 @@ is_retryable() {
     local err
     err=$(echo "$response" | jq -r '.error // empty' 2>/dev/null || true)
     case "$err" in
-      *"Leader timed out"*|*"Transaction timed out"*|*"fetch failed"*|*"ECONNRESET"*|*"ECONNREFUSED"*)
+      *"Leader timed out"*|*"Transaction timed out"*|*"timed out"*|*"took too long"*|*"fetch failed"*|*"ECONNRESET"*|*"ECONNREFUSED"*)
         return 0 ;;
     esac
   fi

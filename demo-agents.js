@@ -36,9 +36,12 @@ function logSystem(msg) {
 const MAX_RETRIES = 3;
 
 function isRetryable(status, data) {
+  // 422 = consensus reached but contract rejected — never retry (the tx went through)
+  if (status === 422) return false;
   if (status === 500) {
     const msg = (data?.error || "").toLowerCase();
     if (msg.includes("leader timed out") || msg.includes("transaction timed out") ||
+        msg.includes("timed out") || msg.includes("took too long") ||
         msg.includes("fetch failed") || msg.includes("econnreset") || msg.includes("econnrefused")) {
       return true;
     }
@@ -54,7 +57,7 @@ async function apiCall(method, endpoint, walletId, body) {
   };
   if (walletId) headers["x-wallet-id"] = walletId;
 
-  const opts = { method, headers };
+  const opts = { method, headers, signal: AbortSignal.timeout(600_000) };
   if (body) opts.body = JSON.stringify(body);
 
   let lastError;
@@ -75,8 +78,12 @@ async function apiCall(method, endpoint, walletId, body) {
     } catch (e) {
       lastError = e;
       // Retry on network-level failures (fetch itself threw)
-      if (attempt < MAX_RETRIES && e.cause?.code) {
-        logSystem(`⚠ Network error (${e.cause.code}), retry ${attempt}/${MAX_RETRIES}...`);
+      const errCode = e.cause?.code || e.code;
+      const errMsg = (e.message || "").toLowerCase();
+      const isNetwork = errCode || errMsg.includes("fetch failed") || errMsg.includes("timed out") ||
+        errMsg.includes("econnreset") || errMsg.includes("abort");
+      if (attempt < MAX_RETRIES && isNetwork) {
+        logSystem(`⚠ Network error (${errCode || errMsg.slice(0, 40)}), retry ${attempt}/${MAX_RETRIES}...`);
         continue;
       }
       throw e;
@@ -91,78 +98,149 @@ const EVIDENCE = {
   bob: "As the provider, I acknowledge the SLA criteria may have been overly strict. The underlying service was operational and returning valid responses. The criteria specification was ambiguous.",
 };
 
-// Track what we've already done to avoid duplicates
+// Track one-shot actions we've already done (accept, verify, release, etc.)
 const completedActions = new Set();
+// Track SLA checks separately — these are repeatable, count how many we've done
+let slaCheckCount = 0;
+const MAX_SLA_CHECKS = 4; // Stop after this many to avoid infinite loops
+// Cooldown: skip actions that recently failed (avoid hammering on transient errors)
+const failCooldowns = new Map(); // key -> timestamp of last failure
+const COOLDOWN_MS = 30_000; // Wait 30s before retrying a failed action
 
 function actionKey(action) {
   return `${action.action}:${action.agreement_id}:${action.milestone_index}`;
 }
 
+// Only permanently mark as completed for 422 (contract rejected).
+// For transient errors, set a cooldown so we retry after a delay.
+function handleError(agent, key, err) {
+  log(agent, `${COLORS.error}Error: ${err.message}${COLORS.reset}`);
+  if (err.message.includes("HTTP 422")) {
+    completedActions.add(key); // Permanent — contract rejected
+  } else {
+    failCooldowns.set(key, Date.now()); // Temporary — retry after cooldown
+  }
+}
+
+function isOnCooldown(key) {
+  const lastFail = failCooldowns.get(key);
+  if (!lastFail) return false;
+  if (Date.now() - lastFail > COOLDOWN_MS) {
+    failCooldowns.delete(key);
+    return false;
+  }
+  return true;
+}
+
 async function processAction(agent, walletId, action) {
   const key = actionKey(action);
-  if (completedActions.has(key)) return false;
+  const agId = action.agreement_id;
+  const msIdx = action.milestone_index;
 
-  log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
-
-  try {
-    const agId = action.agreement_id;
-    const msIdx = action.milestone_index;
-
-    switch (action.action) {
-      case "accept_agreement":
+  switch (action.action) {
+    case "accept_agreement": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/accept`, walletId, {});
         log(agent, `${COLORS.bold}Accepted agreement ${agId}${COLORS.reset}`);
-        break;
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
 
-      case "check_sla":
+    case "check_sla": {
+      // Only Alice (client) runs SLA checks to avoid nonce conflicts
+      if (agent !== "alice") return false;
+      if (slaCheckCount >= MAX_SLA_CHECKS) return false;
+      log(agent, `${COLORS.dim}Action: check_sla (#${slaCheckCount + 1}) — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/check-sla`, walletId, {
           milestone_index: msIdx,
         });
-        log(agent, `SLA check completed for milestone ${msIdx}`);
-        break;
+        slaCheckCount++;
+        log(agent, `SLA check #${slaCheckCount} completed for milestone ${msIdx}`);
+        return true;
+      } catch (err) {
+        log(agent, `${COLORS.error}Error: ${err.message}${COLORS.reset}`);
+        slaCheckCount++; // Count failed ones too to avoid infinite loops
+        return false;
+      }
+    }
 
-      case "verify_milestone":
+    case "verify_milestone": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/verify`, walletId, {
           milestone_index: msIdx,
         });
         log(agent, `${COLORS.bold}Verified milestone ${msIdx}${COLORS.reset}`);
-        break;
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
 
-      case "release_payment":
+    case "release_payment": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/release`, walletId, {
           milestone_index: msIdx,
         });
         log(agent, `${COLORS.bold}Released payment for milestone ${msIdx}${COLORS.reset}`);
-        break;
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
 
-      case "submit_evidence":
+    case "submit_evidence": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      if (!action.court_address) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
           action: "submit_evidence",
           milestone_index: msIdx,
+          court_address: action.court_address,
           evidence: EVIDENCE[agent],
         });
         log(agent, `Submitted evidence for milestone ${msIdx}`);
-        break;
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
 
-      case "refund_milestone":
+    case "refund_milestone": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
         await apiCall("POST", `/api/agreements/${agId}/refund`, walletId, {
           milestone_index: msIdx,
         });
         log(agent, `Refunded milestone ${msIdx}`);
-        break;
-
-      default:
-        log(agent, `${COLORS.dim}Skipping unknown action: ${action.action}${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
         return false;
+      }
     }
 
-    completedActions.add(key);
-    return true;
-  } catch (err) {
-    log(agent, `${COLORS.error}Error: ${err.message}${COLORS.reset}`);
-    // Mark as completed to avoid retrying the same failing action
-    completedActions.add(key);
-    return false;
+    default:
+      return false;
   }
 }
 
@@ -170,10 +248,12 @@ async function runAgent(agent, walletId, address) {
   while (true) {
     try {
       const portfolio = await apiCall("GET", `/api/portfolio?address=${address}`, walletId);
-      const actions = portfolio.actions || [];
+      // Only act on our current agreement, ignore stale ones from previous runs
+      const actions = (portfolio.actions || []).filter(
+        (a) => a.agreement_id === AGREEMENT_ID
+      );
 
       if (actions.length > 0) {
-        log(agent, `Found ${actions.length} pending action(s)`);
         // Process one action at a time (sequential to avoid rapid-fire txs)
         for (const action of actions) {
           const did = await processAction(agent, walletId, action);
@@ -234,12 +314,13 @@ async function main() {
   logSystem(`\nCreating initial agreement: ${AGREEMENT_ID}`);
   log("alice", "Creating agreement with Bob...");
 
-  await apiCall("POST", "/api/agreements", "alice", {
-    agreement_id: AGREEMENT_ID,
-    provider: bob.address,
-    description: `Autonomous agent deal ${runId}`,
-    milestones: [
-      {
+  try {
+    await apiCall("POST", "/api/agreements", "alice", {
+      agreement_id: AGREEMENT_ID,
+      provider: bob.address,
+      description: `Autonomous agent deal ${runId}`,
+      milestones: [
+        {
         description: "GitHub API health check",
         monitoring_url: "https://api.github.com",
         sla_criteria: "Response returns HTTP 200 and body is valid JSON",
@@ -247,8 +328,21 @@ async function main() {
       },
     ],
   });
+    log("alice", `${COLORS.bold}Agreement created!${COLORS.reset}`);
+  } catch (e) {
+    // Network error during create — the tx may have gone through. Check if it exists.
+    log("alice", `${COLORS.error}Create error: ${e.message}${COLORS.reset}`);
+    logSystem("Checking if agreement was created despite the error...");
+    try {
+      await apiCall("GET", `/api/agreements/${AGREEMENT_ID}`, "alice");
+      log("alice", `${COLORS.bold}Agreement exists on-chain — continuing.${COLORS.reset}`);
+    } catch {
+      logSystem(`${COLORS.error}Agreement not found. Exiting.${COLORS.reset}`);
+      process.exit(1);
+    }
+  }
 
-  log("alice", `${COLORS.bold}Agreement created! Both agents now run autonomously.${COLORS.reset}`);
+  log("alice", "Both agents now run autonomously.");
   logSystem(`\nStarting autonomous agent loops (polling every ${POLL_INTERVAL / 1000}s)...\n`);
   logSystem(`${"─".repeat(47)}`);
 

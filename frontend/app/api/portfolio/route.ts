@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey } from "@/lib/server/auth";
 import { readContract } from "@/lib/server/genlayer-server";
+import { getCourtAddress } from "@/lib/server/courtStore";
 import type { Agreement, Milestone } from "@/types/agreement";
 import { AGREEMENT_STATUS, MILESTONE_STATUS } from "@/lib/config";
 
@@ -9,6 +10,7 @@ interface ActionItem {
   milestone_index: number;
   action: string;
   description: string;
+  court_address?: string;
 }
 
 export async function GET(req: NextRequest) {
@@ -104,11 +106,13 @@ export async function GET(req: NextRequest) {
             ? ms.evidence_client
             : ms.evidence_provider;
           if (!hasEvidence) {
+            const courtAddr = getCourtAddress(id, i);
             actions.push({
               agreement_id: id,
               milestone_index: i,
               action: "submit_evidence",
               description: `Submit evidence for disputed milestone ${i}: "${ms.description}"`,
+              ...(courtAddr ? { court_address: courtAddr } : {}),
             });
           }
         }

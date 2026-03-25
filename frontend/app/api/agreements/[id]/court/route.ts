@@ -10,6 +10,7 @@ import {
   consensusResultResponse,
 } from "@/lib/server/genlayer-server";
 import { addActiveTx, removeActiveTx } from "@/lib/server/txActivity";
+import { saveCourtDeployment, getCourtAddress } from "@/lib/server/courtStore";
 import { INTERNET_COURT_CODE } from "@/lib/internetCourtCode";
 import { GENLAYER_CONFIG } from "@/lib/config";
 import type { Milestone } from "@/types/agreement";
@@ -135,6 +136,9 @@ export async function POST(
           }, { status: 500 });
         }
 
+        // Persist court address so agents can discover it via portfolio
+        saveCourtDeployment(id, msIdx, courtAddress, walletId);
+
         return NextResponse.json({
           ...result,
           courtAddress,
@@ -143,9 +147,9 @@ export async function POST(
       }
 
       case "accept": {
-        const courtAddress = body.court_address as string;
+        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
         const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "accept_contract", []);
@@ -156,9 +160,9 @@ export async function POST(
       }
 
       case "initiate": {
-        const courtAddress = body.court_address as string;
+        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
         const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "initiate_dispute", []);
@@ -169,10 +173,10 @@ export async function POST(
       }
 
       case "submit_evidence": {
-        const courtAddress = body.court_address as string;
+        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
         const evidence = body.evidence as string;
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
         if (!evidence) {
           return NextResponse.json({ error: "Missing evidence" }, { status: 400 });
@@ -186,9 +190,9 @@ export async function POST(
       }
 
       case "resolve": {
-        const courtAddress = body.court_address as string;
+        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
         const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "resolve", []);
@@ -199,11 +203,11 @@ export async function POST(
       }
 
       case "apply_verdict": {
-        const courtAddress = body.court_address as string;
         const msIdx = validateMilestoneIndex(body.milestone_index);
         if (msIdx instanceof NextResponse) return msIdx;
+        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx);
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
         // Read IC verdict
@@ -233,9 +237,10 @@ export async function POST(
       }
 
       case "status": {
-        const courtAddress = body.court_address as string;
+        const msIdx = validateMilestoneIndex(body.milestone_index);
+        const courtAddress = (body.court_address as string) || (!(msIdx instanceof NextResponse) ? getCourtAddress(id, msIdx) : null);
         if (!courtAddress) {
-          return NextResponse.json({ error: "Missing court_address" }, { status: 400 });
+          return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
         const [statusStr, evidenceStr] = await Promise.all([
