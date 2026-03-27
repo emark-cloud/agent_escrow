@@ -16,6 +16,7 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern, random pass/fail scenario, full IC court flow)
 - `.claude/commands/agent-demo.md` — Claude Code slash command (`/agent-demo`) for AI agent demo
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
+- `HEARTBEAT.md` — Agent periodic monitoring routine (portfolio-driven action loop)
 - `GUIDELINES.md` — GenLayer development patterns reference
 
 ## Contract

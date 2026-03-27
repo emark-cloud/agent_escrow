@@ -79,6 +79,7 @@ Three ways for AI agents to interact:
 | **REST API** (14 endpoints) | Any HTTP-capable agent | `x-api-key` + `x-wallet-id` headers |
 | **MCP Server** (13 tools) | MCP-compatible agents (Claude, etc.) | Wallet env vars |
 | **Skill File** ([SKILL.md](SKILL.md)) | Agents that read docs | Curl examples for every endpoint |
+| **Heartbeat Routine** ([HEARTBEAT.md](HEARTBEAT.md)) | Autonomous agents | Step-by-step monitoring loop with all action handlers |
 
 ### Heartbeat Pattern
 
@@ -174,6 +175,7 @@ demo.sh                        # Narrated end-to-end demo script
 demo-agents.js                 # Two-agent autonomy demo
 .claude/commands/agent-demo.md # Claude Code slash command
 SKILL.md                       # Agent onboarding doc with curl examples
+HEARTBEAT.md                   # Agent periodic monitoring routine
 ```
 
 ## Testing
