@@ -42,7 +42,8 @@ function isRetryable(status, data) {
     const msg = (data?.error || "").toLowerCase();
     if (msg.includes("leader timed out") || msg.includes("transaction timed out") ||
         msg.includes("timed out") || msg.includes("took too long") ||
-        msg.includes("fetch failed") || msg.includes("econnreset") || msg.includes("econnrefused")) {
+        msg.includes("fetch failed") || msg.includes("econnreset") || msg.includes("econnrefused") ||
+        msg.includes("nonce is not consistent")) {
       return true;
     }
   }
@@ -64,7 +65,18 @@ async function apiCall(method, endpoint, walletId, body) {
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const resp = await fetch(url, opts);
-      const data = await resp.json();
+      const text = await resp.text();
+      let data;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // Server returned non-JSON (e.g. HTML error page) — treat as transient
+        if (attempt < MAX_RETRIES) {
+          logSystem(`⚠ Non-JSON response (HTTP ${resp.status}), retry ${attempt}/${MAX_RETRIES}...`);
+          continue;
+        }
+        throw new Error(`HTTP ${resp.status}: Non-JSON response — ${text.slice(0, 100)}`);
+      }
 
       if (resp.status >= 400) {
         if (attempt < MAX_RETRIES && isRetryable(resp.status, data)) {
@@ -203,6 +215,76 @@ async function processAction(agent, walletId, action) {
       }
     }
 
+    case "dispute_milestone": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        await apiCall("POST", `/api/agreements/${agId}/dispute`, walletId, {
+          milestone_index: msIdx,
+          reason: "Automated SLA checks consistently failed — service did not meet agreed criteria.",
+        });
+        log(agent, `${COLORS.bold}Disputed milestone ${msIdx}${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
+    case "deploy_court": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        const result = await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
+          action: "deploy",
+          milestone_index: msIdx,
+        });
+        log(agent, `${COLORS.bold}Deployed Internet Court at ${result.courtAddress}${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
+    case "accept_court": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      if (!action.court_address) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
+          action: "accept",
+          court_address: action.court_address,
+        });
+        log(agent, `${COLORS.bold}Accepted Internet Court case${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
+    case "initiate_court": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      if (!action.court_address) return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
+          action: "initiate",
+          court_address: action.court_address,
+        });
+        log(agent, `${COLORS.bold}Initiated Internet Court dispute${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
     case "submit_evidence": {
       if (completedActions.has(key) || isOnCooldown(key)) return false;
       if (!action.court_address) return false;
@@ -210,11 +292,51 @@ async function processAction(agent, walletId, action) {
       try {
         await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
           action: "submit_evidence",
-          milestone_index: msIdx,
           court_address: action.court_address,
           evidence: EVIDENCE[agent],
         });
         log(agent, `Submitted evidence for milestone ${msIdx}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
+    case "resolve_court": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      if (!action.court_address) return false;
+      // Only Alice triggers resolution to avoid nonce conflicts
+      if (agent !== "alice") return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
+          action: "resolve",
+          court_address: action.court_address,
+        });
+        log(agent, `${COLORS.bold}AI jury resolution triggered${COLORS.reset}`);
+        completedActions.add(key);
+        return true;
+      } catch (err) {
+        handleError(agent, key, err);
+        return false;
+      }
+    }
+
+    case "apply_verdict": {
+      if (completedActions.has(key) || isOnCooldown(key)) return false;
+      if (!action.court_address) return false;
+      // Only Alice applies verdict to avoid nonce conflicts
+      if (agent !== "alice") return false;
+      log(agent, `${COLORS.dim}Action: ${action.action} — ${action.description}${COLORS.reset}`);
+      try {
+        const result = await apiCall("POST", `/api/agreements/${agId}/court`, walletId, {
+          action: "apply_verdict",
+          milestone_index: msIdx,
+          court_address: action.court_address,
+        });
+        log(agent, `${COLORS.bold}Applied verdict: ${result.verdict}${COLORS.reset}`);
         completedActions.add(key);
         return true;
       } catch (err) {
@@ -279,6 +401,24 @@ async function runAgent(agent, walletId, address) {
   }
 }
 
+// Monitoring scenarios — one pass, one fail, picked randomly each run
+const SCENARIOS = [
+  {
+    description: "GitHub API health check",
+    monitoring_url: "https://api.github.com",
+    sla_criteria: "Response returns HTTP 200 and body is valid JSON",
+    amount: "100",
+    expectation: "pass",
+  },
+  {
+    description: "GitHub API impossible SLA",
+    monitoring_url: "https://api.github.com",
+    sla_criteria: "Response must contain a field called 'quantum_ready' set to true and server response time must be under 1 nanosecond",
+    amount: "175",
+    expectation: "fail",
+  },
+];
+
 // Global agreement ID
 let AGREEMENT_ID;
 
@@ -307,24 +447,30 @@ async function main() {
   logSystem(`Alice: ${alice.address}`);
   logSystem(`Bob:   ${bob.address}`);
 
+  // Pick a random monitoring scenario
+  const scenario = SCENARIOS[Math.floor(Math.random() * SCENARIOS.length)];
+
   // Create the initial agreement (Alice's bootstrap action)
   const runId = Date.now().toString().slice(-6);
   AGREEMENT_ID = `auto-${runId}`;
 
   logSystem(`\nCreating initial agreement: ${AGREEMENT_ID}`);
+  logSystem(`Scenario: "${scenario.description}" (expected: ${scenario.expectation})`);
+  logSystem(`URL: ${scenario.monitoring_url}`);
+  logSystem(`SLA: ${scenario.sla_criteria}`);
   log("alice", "Creating agreement with Bob...");
 
   try {
     await apiCall("POST", "/api/agreements", "alice", {
       agreement_id: AGREEMENT_ID,
       provider: bob.address,
-      description: `Autonomous agent deal ${runId}`,
+      description: `Autonomous agent deal ${runId} — ${scenario.description}`,
       milestones: [
         {
-        description: "GitHub API health check",
-        monitoring_url: "https://api.github.com",
-        sla_criteria: "Response returns HTTP 200 and body is valid JSON",
-        amount: "100",
+        description: scenario.description,
+        monitoring_url: scenario.monitoring_url,
+        sla_criteria: scenario.sla_criteria,
+        amount: scenario.amount,
       },
     ],
   });

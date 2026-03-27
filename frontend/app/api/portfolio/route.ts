@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey } from "@/lib/server/auth";
-import { readContract } from "@/lib/server/genlayer-server";
+import { readContract, serverReadContractAt } from "@/lib/server/genlayer-server";
 import { getCourtAddress } from "@/lib/server/courtStore";
 import type { Agreement, Milestone } from "@/types/agreement";
 import { AGREEMENT_STATUS, MILESTONE_STATUS } from "@/lib/config";
@@ -88,6 +88,16 @@ export async function GET(req: NextRequest) {
               description: `Verify milestone ${i} (${ms.pass_count} passes): "${ms.description}"`,
             });
           }
+
+          // If there are enough failures and no passes, client can dispute
+          if (ms.fail_count >= 2 && ms.pass_count === 0 && isClient) {
+            actions.push({
+              agreement_id: id,
+              milestone_index: i,
+              action: "dispute_milestone",
+              description: `Dispute milestone ${i} (${ms.fail_count} failures, 0 passes): "${ms.description}"`,
+            });
+          }
         }
 
         // Verified → client can release payment
@@ -100,20 +110,111 @@ export async function GET(req: NextRequest) {
           });
         }
 
-        // Disputed → submit evidence if not already submitted
+        // Disputed → drive the Internet Court flow
         if (ms.status === 4) {
-          const hasEvidence = isClient
-            ? ms.evidence_client
-            : ms.evidence_provider;
-          if (!hasEvidence) {
-            const courtAddr = getCourtAddress(id, i);
-            actions.push({
-              agreement_id: id,
-              milestone_index: i,
-              action: "submit_evidence",
-              description: `Submit evidence for disputed milestone ${i}: "${ms.description}"`,
-              ...(courtAddr ? { court_address: courtAddr } : {}),
-            });
+          const courtAddr = getCourtAddress(id, i);
+
+          if (!courtAddr) {
+            // Step 1: No court deployed yet → deployer (client) deploys
+            if (isClient) {
+              actions.push({
+                agreement_id: id,
+                milestone_index: i,
+                action: "deploy_court",
+                description: `Deploy Internet Court for disputed milestone ${i}: "${ms.description}"`,
+              });
+            }
+          } else {
+            // Court exists — read its status to determine next step
+            let icStatus: { status: string; verdict?: string } | null = null;
+            try {
+              const statusStr = await serverReadContractAt<string>(courtAddr, "get_status", []);
+              icStatus = JSON.parse(statusStr);
+            } catch {
+              // Court read failed — skip court actions this cycle
+            }
+
+            if (icStatus) {
+              if (icStatus.status === "created") {
+                // Step 2: Other party accepts the court case
+                if (isProvider) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "accept_court",
+                    description: `Accept Internet Court case for milestone ${i}`,
+                    court_address: courtAddr,
+                  });
+                }
+              } else if (icStatus.status === "active") {
+                // Step 3: Initiator starts the dispute
+                if (isClient) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "initiate_court",
+                    description: `Initiate Internet Court dispute for milestone ${i}`,
+                    court_address: courtAddr,
+                  });
+                }
+              } else if (icStatus.status === "disputed") {
+                // Step 4: Both parties submit evidence
+                // Read evidence to see who has submitted
+                let evidence: { party_a?: string; party_b?: string } | null = null;
+                try {
+                  const evidenceStr = await serverReadContractAt<string>(courtAddr, "get_evidence", []);
+                  evidence = JSON.parse(evidenceStr);
+                } catch {
+                  // Evidence read failed — skip
+                }
+
+                const clientHasEvidence = evidence?.party_a && evidence.party_a.length > 0;
+                const providerHasEvidence = evidence?.party_b && evidence.party_b.length > 0;
+
+                if (isClient && !clientHasEvidence) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "submit_evidence",
+                    description: `Submit evidence for milestone ${i} (client)`,
+                    court_address: courtAddr,
+                  });
+                }
+                if (isProvider && !providerHasEvidence) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "submit_evidence",
+                    description: `Submit evidence for milestone ${i} (provider)`,
+                    court_address: courtAddr,
+                  });
+                }
+
+                // Step 5: If both submitted, either party can resolve
+                if (clientHasEvidence && providerHasEvidence) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "resolve_court",
+                    description: `Trigger AI jury resolution for milestone ${i}`,
+                    court_address: courtAddr,
+                  });
+                }
+              } else if (icStatus.status === "resolving") {
+                // AI jury is deliberating — no action needed, just wait
+              } else if (icStatus.status === "resolved") {
+                // Step 6: Apply verdict back to escrow
+                if (isClient || isProvider) {
+                  actions.push({
+                    agreement_id: id,
+                    milestone_index: i,
+                    action: "apply_verdict",
+                    description: `Apply IC verdict (${icStatus.verdict}) to milestone ${i}`,
+                    court_address: courtAddr,
+                  });
+                }
+              }
+            }
           }
         }
 

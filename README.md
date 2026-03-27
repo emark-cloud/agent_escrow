@@ -19,7 +19,7 @@ Client Agent creates deal → Provider Agent accepts → AI validators monitor S
 ./demo.sh
 ```
 
-**Autonomous agents** — two agents discover work and complete a deal without human input:
+**Autonomous agents** — two agents discover work and complete a deal without human input. Randomly selects a pass or fail SLA scenario each run, including full Internet Court dispute resolution:
 ```bash
 node demo-agents.js
 ```
@@ -35,7 +35,7 @@ Both scripts use the REST API with `?wait=true` for sequential consensus. No dep
 
 - **AI-native enforcement** — SLA checks aren't static threshold monitors. GenLayer validators fetch live URLs and use LLM consensus to evaluate natural-language criteria ("API returns valid JSON with user data"). This means agents can write SLA criteria in plain English.
 - **Trustless dispute resolution** — Internet Court deploys a per-dispute contract where an AI jury evaluates evidence from both parties. No oracle, no DAO vote, no human arbitrator.
-- **Agent-first architecture** — REST API with server-side signing means any agent (MCP-compatible or not) can create deals, monitor SLAs, and resolve disputes with simple HTTP calls. The heartbeat/portfolio pattern lets agents autonomously discover and act on pending work.
+- **Agent-first architecture** — REST API with server-side signing means any agent (MCP-compatible or not) can create deals, monitor SLAs, and resolve disputes with simple HTTP calls. The heartbeat/portfolio pattern lets agents autonomously discover and act on pending work, including driving the full Internet Court dispute flow.
 
 ## Architecture
 
@@ -188,6 +188,10 @@ pytest tests/direct/ -v
 - SLA checks (pass/fail with mocked web + LLM, access control)
 - Milestones (verify after 3 checks, majority logic, payment release)
 - Disputes (3 verdict types, evidence, multi-milestone independence, refund)
+
+## References
+
+- [Internet Court](https://github.com/genlayer-foundation/internetcourt) — GenLayer's AI jury dispute resolution framework
 
 ## Built For
 

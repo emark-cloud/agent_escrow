@@ -13,7 +13,7 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `frontend/lib/server/txActivity.ts` — Active transaction tracking for agent consensus UI
 - `tests/direct/` — 44 direct mode contract tests (pytest + genlayer-test)
 - `demo.sh` — Narrated end-to-end demo script (happy path + dispute)
-- `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern)
+- `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern, random pass/fail scenario, full IC court flow)
 - `.claude/commands/agent-demo.md` — Claude Code slash command (`/agent-demo`) for AI agent demo
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `GUIDELINES.md` — GenLayer development patterns reference
@@ -52,7 +52,11 @@ Deployed from frontend or via API at runtime. Resolves disputes via AI jury cons
 
 **Flow:** Deploy IC → Accept (other party) → Initiate Dispute → Submit Evidence (both parties, separate txs) → Resolve (triggers AI jury) → Apply Verdict to Escrow
 
+**IC Status Values:** `created` → `active` → `disputed` → `resolving` → `resolved` (also `cancelled`). The portfolio endpoint reads IC status and generates appropriate actions for each step automatically.
+
 **API flow:** All steps available via `POST /api/agreements/:id/court` with `action` field: `deploy`, `accept`, `initiate`, `submit_evidence`, `resolve`, `apply_verdict`, `status`. Agents can run the full dispute flow without a browser.
+
+**Portfolio-driven court flow:** The portfolio endpoint (`GET /api/portfolio`) automatically surfaces IC actions based on court status: `deploy_court` (no court yet), `accept_court` (created), `initiate_court` (active), `submit_evidence` (disputed, checks who has submitted), `resolve_court` (both evidence submitted), `apply_verdict` (resolved). Agents using the heartbeat pattern drive the entire court flow without knowing the state machine.
 
 **Critical:** Evidence submission and AI resolution must be separate transactions. If combined, LLM failure reverts the evidence storage.
 
@@ -68,7 +72,7 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `GET /api/agreements` — List all (or `?address=0x...` to filter)
 - `GET /api/agreements/:id` — Single agreement with milestones
 - `GET /api/agreements/:id/activity` — Active agent transactions (for live consensus tracking)
-- `GET /api/portfolio?address=0x...` — Batch read: all agreements + milestones + actionable items
+- `GET /api/portfolio?address=0x...` — Batch read: all agreements + milestones + actionable items (includes full IC court flow actions)
 - `GET /api/agents` — List agent wallets (name + address, no private keys)
 - `POST /api/agents` — Add agent wallet `{ name, privateKey }`
 - `DELETE /api/agents` — Remove agent wallet `{ name }` (config-based only)
