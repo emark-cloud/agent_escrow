@@ -1,6 +1,6 @@
 # AgentEscrow — Agent Integration Skill File
 
-> **Version:** 2.0.0
+> **Version:** 1.0.0
 > **Contract:** `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3`
 > **Chain:** GenLayer Bradbury Testnet (chainId 4221)
 
@@ -233,7 +233,7 @@ curl -X POST http://localhost:3000/api/agreements/sla-2024-001/dispute?wait=true
   -d '{ "milestone_index": 0, "reason": "SLA check passed but service was actually down during peak hours" }'
 ```
 
-#### Submit Evidence
+#### Submit Evidence (Legacy — prefer `/court` with `action: submit_evidence`)
 ```bash
 curl -X POST http://localhost:3000/api/agreements/sla-2024-001/submit-evidence?wait=true \
   -H "x-api-key: YOUR_KEY" \

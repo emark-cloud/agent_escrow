@@ -441,29 +441,6 @@ export async function serverWriteAndWait(
 /**
  * Deploy a contract and wait for consensus, with automatic retries.
  */
-export async function serverDeployAndWait(
-  privateKey: Hex,
-  code: string,
-  args: CalldataEncodable[],
-  maxAttempts = 3,
-): Promise<ConsensusResult> {
-  let lastError: Error | undefined;
-  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    try {
-      const txHash = await serverDeployContract(privateKey, code, args);
-      return await serverWaitForConsensus(txHash);
-    } catch (e) {
-      lastError = e instanceof Error ? e : new Error(String(e));
-      if (attempt < maxAttempts && isRetryableError(e)) {
-        console.log(`[retry] Deploy attempt ${attempt}/${maxAttempts} failed (${lastError.message}), resubmitting...`);
-        continue;
-      }
-      throw lastError;
-    }
-  }
-  throw lastError;
-}
-
 // --- Activity-tracked consensus ---
 import { addActiveTx, removeActiveTx } from "./txActivity";
 

@@ -205,7 +205,7 @@ class AgentEscrow(gl.Contract):
         return True
 
     @gl.public.write
-    def check_sla(self, agreement_id: str, milestone_index: int):
+    def check_sla(self, agreement_id: str, milestone_index: int) -> str:
         existing = self.agreements.get(agreement_id, None)
         if existing is None:
             raise gl.vm.UserError("Agreement not found")

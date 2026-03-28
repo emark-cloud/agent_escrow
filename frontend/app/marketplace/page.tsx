@@ -173,14 +173,22 @@ export default function MarketplacePage() {
   useEffect(() => {
     async function fetchData() {
       try {
-        const [mkt, act] = await Promise.all([
-          fetch("/api/marketplace").then((r) => r.json()),
-          fetch("/api/marketplace/activity").then((r) => r.json()),
+        const [mktRes, actRes] = await Promise.all([
+          fetch("/api/marketplace"),
+          fetch("/api/marketplace/activity"),
         ]);
-        setListings(mkt.listings || []);
-        setStats(mkt.stats || stats);
-        setActivity((act.events || []).reverse());
-      } catch {}
+        if (mktRes.ok) {
+          const mkt = await mktRes.json();
+          setListings(mkt.listings || []);
+          if (mkt.stats) setStats(mkt.stats);
+        }
+        if (actRes.ok) {
+          const act = await actRes.json();
+          setActivity((act.events || []).reverse());
+        }
+      } catch (e) {
+        console.error("Marketplace fetch error:", e);
+      }
     }
 
     fetchData();

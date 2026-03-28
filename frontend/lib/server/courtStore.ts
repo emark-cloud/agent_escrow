@@ -55,7 +55,3 @@ export function getCourtAddress(
   return data[makeKey(agreementId, milestoneIndex)]?.courtAddress ?? null;
 }
 
-export function getCourtDeployments(agreementId: string): CourtDeployment[] {
-  const data = readFile();
-  return Object.values(data).filter((d) => d.agreementId === agreementId);
-}

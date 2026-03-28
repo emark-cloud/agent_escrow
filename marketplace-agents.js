@@ -124,15 +124,16 @@ function actionKey(action) {
   return `${action.action}:${action.agreement_id}:${action.milestone_index}`;
 }
 
-const COOLDOWN_MS = 30_000;
+const COOLDOWN_MS = 25_000; // Match poll interval
 const MAX_SLA_CHECKS_PER_AGREEMENT = 4;
+const NO_COOLDOWN_ACTIONS = new Set(["apply_verdict", "resolve_court"]);
 
-function handleError(agent, key, err) {
+function handleError(agent, key, err, actionName) {
   log(agent, `${C.error}Error: ${err.message}${C.reset}`);
   const state = getState(agent);
   if (err.message.includes("HTTP 422")) {
     state.completedActions.add(key);
-  } else {
+  } else if (!NO_COOLDOWN_ACTIONS.has(actionName)) {
     state.failCooldowns.set(key, Date.now());
   }
 }
@@ -169,7 +170,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}✓ Accepted agreement ${agId}${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "check_sla": {
@@ -195,7 +196,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}✓ Verified milestone ${msIdx}${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "release_payment": {
@@ -205,7 +206,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}✓ Released payment${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "dispute_milestone": {
@@ -218,7 +219,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚠ Disputed milestone ${msIdx}${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "deploy_court": {
@@ -230,7 +231,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚖ Court deployed at ${result.courtAddress}${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "accept_court": {
@@ -243,7 +244,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚖ Accepted court case${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "initiate_court": {
@@ -256,7 +257,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚖ Court dispute initiated${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "submit_evidence": {
@@ -270,7 +271,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `Submitted evidence`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "resolve_court": {
@@ -283,7 +284,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚖ AI jury resolution triggered${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "apply_verdict": {
@@ -296,7 +297,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `${C.bold}⚖ Verdict applied: ${result.verdict}${C.reset}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     case "refund_milestone": {
@@ -306,7 +307,7 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
         log(agentName, `Refunded milestone ${msIdx}`);
         state.completedActions.add(key);
         return true;
-      } catch (err) { handleError(agentName, key, err); return false; }
+      } catch (err) { handleError(agentName, key, err, action.action); return false; }
     }
 
     default:
@@ -356,9 +357,31 @@ async function runAgentCycle(agentName, walletId, agentAddress) {
     const portfolio = await apiCall("GET", `/api/portfolio?address=${agentAddress}`, walletId);
     const actions = portfolio.actions || [];
 
+    // Build client lookup: agreement_id -> is this agent the client?
+    const isClientOf = {};
+    for (const entry of portfolio.agreements || []) {
+      const ag = entry.agreement;
+      isClientOf[ag.agreement_id] = ag.client?.toLowerCase() === agentAddress.toLowerCase();
+    }
+
     if (actions.length > 0) {
       // Process one action per cycle to avoid nonce conflicts
       for (const action of actions) {
+        const agId = action.agreement_id;
+        const isClient = isClientOf[agId];
+        const isProvider = isClientOf[agId] === false; // explicitly false, not undefined
+
+        // Role-based gating to prevent nonce conflicts:
+        // - Client-only: verify, release, dispute, check_sla, deploy_court, initiate_court, resolve_court, apply_verdict
+        // - Provider-only: accept_agreement, accept_court
+        // - Both: submit_evidence, refund_milestone
+        const clientOnly = ["verify_milestone", "release_payment", "dispute_milestone", "check_sla",
+                            "deploy_court", "initiate_court", "resolve_court", "apply_verdict"];
+        const providerOnly = ["accept_agreement", "accept_court"];
+
+        if (clientOnly.includes(action.action) && !isClient) continue;
+        if (providerOnly.includes(action.action) && !isProvider) continue;
+
         const did = await processPortfolioAction(agentName, walletId, agentAddress, action);
         if (did) break;
       }
@@ -501,6 +524,7 @@ async function main() {
         await new Promise((r) => setTimeout(r, staggerDelay));
       }
 
+      // walletId = agent name — auth.ts resolves this via agents.json lookup
       await runAgentCycle(name, name, wallets[name]);
     }
 

@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateNoPipes } from "@/lib/server/auth";
 import { getListingById, claimListing, addActivity } from "@/lib/server/marketplaceStore";
-import { getProfile, seedProfiles } from "@/lib/server/agentProfiles";
-
-let seeded = false;
+import { getProfile, ensureSeeded } from "@/lib/server/agentProfiles";
 import {
   serverWriteAndWait,
   consensusResultResponse,
@@ -29,7 +27,7 @@ export async function POST(
     return NextResponse.json({ error: "Missing required field: agent" }, { status: 400 });
   }
 
-  if (!seeded) { seedProfiles(); seeded = true; }
+  ensureSeeded();
   const profile = getProfile(agent);
   if (!profile) {
     return NextResponse.json({ error: `Unknown agent: ${agent}` }, { status: 400 });

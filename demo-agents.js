@@ -9,6 +9,7 @@
 const BASE_URL = process.argv[2] || "http://localhost:3000";
 const API_KEY = process.env.API_KEY || "test";
 const POLL_INTERVAL = 15_000; // 15 seconds
+const MAX_RUNTIME_MS = 45 * 60 * 1000; // 45 minutes max
 
 // Colors for console output
 const COLORS = {
@@ -117,7 +118,9 @@ let slaCheckCount = 0;
 const MAX_SLA_CHECKS = 4; // Stop after this many to avoid infinite loops
 // Cooldown: skip actions that recently failed (avoid hammering on transient errors)
 const failCooldowns = new Map(); // key -> timestamp of last failure
-const COOLDOWN_MS = 30_000; // Wait 30s before retrying a failed action
+const COOLDOWN_MS = 15_000; // Wait 15s before retrying a failed action (matches poll interval)
+// Actions that depend on async state changes (court resolving) — no cooldown, just retry each poll
+const NO_COOLDOWN_ACTIONS = new Set(["apply_verdict", "resolve_court"]);
 
 function actionKey(action) {
   return `${action.action}:${action.agreement_id}:${action.milestone_index}`;
@@ -125,13 +128,14 @@ function actionKey(action) {
 
 // Only permanently mark as completed for 422 (contract rejected).
 // For transient errors, set a cooldown so we retry after a delay.
-function handleError(agent, key, err) {
+function handleError(agent, key, err, actionName) {
   log(agent, `${COLORS.error}Error: ${err.message}${COLORS.reset}`);
   if (err.message.includes("HTTP 422")) {
     completedActions.add(key); // Permanent — contract rejected
-  } else {
+  } else if (!NO_COOLDOWN_ACTIONS.has(actionName)) {
     failCooldowns.set(key, Date.now()); // Temporary — retry after cooldown
   }
+  // No cooldown for verdict/resolve actions — they depend on async state changes
 }
 
 function isOnCooldown(key) {
@@ -159,7 +163,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -178,7 +182,10 @@ async function processAction(agent, walletId, action) {
         return true;
       } catch (err) {
         log(agent, `${COLORS.error}Error: ${err.message}${COLORS.reset}`);
-        slaCheckCount++; // Count failed ones too to avoid infinite loops
+        // Only count contract rejections (422) toward the cap, not network errors
+        if (err.message.includes("HTTP 422")) {
+          slaCheckCount++;
+        }
         return false;
       }
     }
@@ -194,7 +201,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -210,7 +217,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -227,7 +234,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -244,7 +251,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -262,7 +269,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -280,7 +287,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -299,7 +306,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -319,7 +326,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -338,9 +345,14 @@ async function processAction(agent, walletId, action) {
         });
         log(agent, `${COLORS.bold}Applied verdict: ${result.verdict}${COLORS.reset}`);
         completedActions.add(key);
+        // If verdict was UNDETERMINED, milestone goes back to MONITORING — allow more SLA checks
+        if (result.verdict === "UNDETERMINED") {
+          slaCheckCount = Math.max(0, slaCheckCount - 2);
+          log(agent, `${COLORS.dim}Verdict undetermined — SLA checks re-enabled${COLORS.reset}`);
+        }
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -356,7 +368,7 @@ async function processAction(agent, walletId, action) {
         completedActions.add(key);
         return true;
       } catch (err) {
-        handleError(agent, key, err);
+        handleError(agent, key, err, action.action);
         return false;
       }
     }
@@ -366,8 +378,14 @@ async function processAction(agent, walletId, action) {
   }
 }
 
-async function runAgent(agent, walletId, address) {
+async function runAgent(agent, walletId, address, startTime) {
   while (true) {
+    // Safety timeout
+    if (Date.now() - startTime > MAX_RUNTIME_MS) {
+      log(agent, `${COLORS.error}Max runtime (${MAX_RUNTIME_MS / 60000}min) reached. Exiting.${COLORS.reset}`);
+      return "timeout";
+    }
+
     try {
       const portfolio = await apiCall("GET", `/api/portfolio?address=${address}`, walletId);
       // Only act on our current agreement, ignore stale ones from previous runs
@@ -467,13 +485,13 @@ async function main() {
       description: `Autonomous agent deal ${runId} — ${scenario.description}`,
       milestones: [
         {
-        description: scenario.description,
-        monitoring_url: scenario.monitoring_url,
-        sla_criteria: scenario.sla_criteria,
-        amount: scenario.amount,
-      },
-    ],
-  });
+          description: scenario.description,
+          monitoring_url: scenario.monitoring_url,
+          sla_criteria: scenario.sla_criteria,
+          amount: scenario.amount,
+        },
+      ],
+    });
     log("alice", `${COLORS.bold}Agreement created!${COLORS.reset}`);
   } catch (e) {
     // Network error during create — the tx may have gone through. Check if it exists.
@@ -496,8 +514,8 @@ async function main() {
 
   // Run both agents in parallel
   const result = await Promise.race([
-    runAgent("alice", "alice", alice.address),
-    runAgent("bob", "bob", bob.address),
+    runAgent("alice", "alice", alice.address, startTime),
+    runAgent("bob", "bob", bob.address, startTime),
   ]);
 
   const elapsed = Math.round((Date.now() - startTime) / 1000);

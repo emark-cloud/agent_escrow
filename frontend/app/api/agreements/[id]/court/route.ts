@@ -54,11 +54,15 @@ export async function POST(
     return NextResponse.json({ error: "Missing action field" }, { status: 400 });
   }
 
+  // Extract milestone_index once — optional for cases that accept court_address directly,
+  // strictly validated in deploy/apply_verdict where it's required.
+  const rawMsIdx = body.milestone_index != null ? validateMilestoneIndex(body.milestone_index) : 0;
+  const msIdx = rawMsIdx instanceof NextResponse ? null : rawMsIdx;
+
   try {
     switch (action) {
       case "deploy": {
-        const msIdx = validateMilestoneIndex(body.milestone_index);
-        if (msIdx instanceof NextResponse) return msIdx;
+        if (msIdx == null) return rawMsIdx as NextResponse;
 
         // Read agreement and milestone data
         const agreement = await readContract<Record<string, unknown>>("get_agreement", [id]);
@@ -147,7 +151,7 @@ export async function POST(
       }
 
       case "accept": {
-        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
+        const courtAddress = (body.court_address as string) || (msIdx != null ? getCourtAddress(id, msIdx) : null);
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
@@ -160,7 +164,7 @@ export async function POST(
       }
 
       case "initiate": {
-        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
+        const courtAddress = (body.court_address as string) || (msIdx != null ? getCourtAddress(id, msIdx) : null);
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
@@ -173,7 +177,7 @@ export async function POST(
       }
 
       case "submit_evidence": {
-        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
+        const courtAddress = (body.court_address as string) || (msIdx != null ? getCourtAddress(id, msIdx) : null);
         const evidence = body.evidence as string;
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
@@ -190,7 +194,7 @@ export async function POST(
       }
 
       case "resolve": {
-        const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx as number);
+        const courtAddress = (body.court_address as string) || (msIdx != null ? getCourtAddress(id, msIdx) : null);
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
@@ -203,8 +207,7 @@ export async function POST(
       }
 
       case "apply_verdict": {
-        const msIdx = validateMilestoneIndex(body.milestone_index);
-        if (msIdx instanceof NextResponse) return msIdx;
+        if (msIdx == null) return rawMsIdx as NextResponse;
         const courtAddress = (body.court_address as string) || getCourtAddress(id, msIdx);
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
@@ -237,8 +240,7 @@ export async function POST(
       }
 
       case "status": {
-        const msIdx = validateMilestoneIndex(body.milestone_index);
-        const courtAddress = (body.court_address as string) || (!(msIdx instanceof NextResponse) ? getCourtAddress(id, msIdx) : null);
+        const courtAddress = (body.court_address as string) || (msIdx != null ? getCourtAddress(id, msIdx) : null);
         if (!courtAddress) {
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }

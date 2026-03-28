@@ -88,7 +88,7 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `POST /api/agreements/:id/verify` — Verify milestone
 - `POST /api/agreements/:id/release` — Release payment
 - `POST /api/agreements/:id/dispute` — Dispute milestone
-- `POST /api/agreements/:id/submit-evidence` — Submit evidence
+- `POST /api/agreements/:id/submit-evidence` — Submit evidence (legacy, prefer `/court` with `action: submit_evidence`)
 - `POST /api/agreements/:id/resolve` — Apply IC verdict (legacy, prefer `/court` with `action: apply_verdict`)
 - `POST /api/agreements/:id/refund` — Refund failed milestone
 - `POST /api/agreements/:id/cancel` — Cancel agreement

@@ -512,6 +512,32 @@ export default function DemoPage() {
           </p>
         </div>
       )}
+
+      {/* Autonomous Demos */}
+      <div className="mt-16 border-t border-white/10 pt-12">
+        <h2 className="text-2xl font-bold mb-2">Autonomous Demos</h2>
+        <p className="text-white/40 text-sm mb-6">
+          Launch autonomous agent scripts that create, negotiate, and complete deals without human input.
+        </p>
+        <div className="grid md:grid-cols-2 gap-4">
+          <AutonomousDemoPanel
+            id="agents"
+            title="Two-Agent Demo"
+            description="Alice and Bob autonomously create a deal, run SLA checks, and complete or dispute it via Internet Court."
+            icon="🤖"
+            color="blue"
+            apiKey={apiKey}
+          />
+          <AutonomousDemoPanel
+            id="marketplace"
+            title="5-Agent Marketplace"
+            description="Five agents create service listings, discover and claim deals, and process SLA checks autonomously. Watch live at /marketplace."
+            icon="🏪"
+            color="violet"
+            apiKey={apiKey}
+          />
+        </div>
+      </div>
     </div>
   );
 }
@@ -611,6 +637,176 @@ function StepDetails({ step }: { step: DemoStep & { result: StepResult } }) {
         <pre className="text-[10px] text-white/30 bg-black/30 rounded p-2 mt-1 overflow-x-auto max-h-40">
           {JSON.stringify(resp, null, 2)}
         </pre>
+      )}
+    </div>
+  );
+}
+
+function AutonomousDemoPanel({
+  id,
+  title,
+  description,
+  icon,
+  color,
+  apiKey,
+}: {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  color: string;
+  apiKey: string;
+}) {
+  const [status, setStatus] = useState<"stopped" | "running" | "stopping">("stopped");
+  const [output, setOutput] = useState<string[]>([]);
+  const [lineCount, setLineCount] = useState(0);
+  const outputRef = useRef<HTMLDivElement>(null);
+
+  // Check if already running on mount
+  useEffect(() => {
+    async function checkStatus() {
+      try {
+        const resp = await fetch(`/api/demos?id=${id}&since=0`);
+        const data = await resp.json();
+        if (data.status === "running") {
+          setStatus("running");
+          if (data.output?.length > 0) {
+            setOutput(data.output);
+            setLineCount(data.total);
+          }
+        }
+      } catch {}
+    }
+    checkStatus();
+  }, [id]);
+
+  // Poll output when running
+  useEffect(() => {
+    if (status !== "running") return;
+    let cancelled = false;
+
+    const poll = async () => {
+      while (!cancelled) {
+        try {
+          const resp = await fetch(`/api/demos?id=${id}&since=${lineCount}`);
+          const data = await resp.json();
+          if (data.output?.length > 0) {
+            setOutput((prev) => [...prev, ...data.output].slice(-300));
+            setLineCount(data.total);
+          }
+          if (data.status === "stopped") {
+            setStatus("stopped");
+            break;
+          }
+        } catch {}
+        await new Promise((r) => setTimeout(r, 2000));
+      }
+    };
+
+    poll();
+    return () => { cancelled = true; };
+  }, [status, id, lineCount]);
+
+  // Auto-scroll
+  useEffect(() => {
+    if (outputRef.current) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+  }, [output]);
+
+  async function start() {
+    setOutput([]);
+    setLineCount(0);
+    try {
+      const resp = await fetch("/api/demos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({ id, action: "start" }),
+      });
+      const data = await resp.json();
+      if (data.error) {
+        setOutput([`Error: ${data.error}`]);
+        return;
+      }
+      setStatus("running");
+    } catch (err) {
+      setOutput([`Failed to start: ${err}`]);
+    }
+  }
+
+  async function stop() {
+    setStatus("stopping");
+    try {
+      await fetch("/api/demos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        body: JSON.stringify({ id, action: "stop" }),
+      });
+    } catch {}
+  }
+
+  const borderColor = color === "blue" ? "border-blue-500/20" : "border-violet-500/20";
+  const bgAccent = color === "blue" ? "bg-blue-500/10" : "bg-violet-500/10";
+  const textAccent = color === "blue" ? "text-blue-400" : "text-violet-400";
+  const btnBg = color === "blue" ? "bg-blue-600 hover:bg-blue-500" : "bg-violet-600 hover:bg-violet-500";
+
+  return (
+    <div className={`glass-card rounded-xl p-5 border ${borderColor}`}>
+      <div className="flex items-start justify-between mb-3">
+        <div className="flex items-center gap-3">
+          <span className={`text-2xl w-10 h-10 rounded-lg flex items-center justify-center ${bgAccent}`}>
+            {icon}
+          </span>
+          <div>
+            <h3 className="font-semibold text-sm">{title}</h3>
+            <p className="text-[11px] text-white/40 mt-0.5">{description}</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Controls */}
+      <div className="flex items-center gap-2 mb-3">
+        {status === "stopped" ? (
+          <button onClick={start} className={`px-4 py-1.5 ${btnBg} rounded-lg text-xs font-semibold transition-colors`}>
+            Start
+          </button>
+        ) : (
+          <button
+            onClick={stop}
+            disabled={status === "stopping"}
+            className="px-4 py-1.5 bg-red-600/80 hover:bg-red-500 disabled:opacity-50 rounded-lg text-xs font-semibold transition-colors"
+          >
+            {status === "stopping" ? "Stopping..." : "Stop"}
+          </button>
+        )}
+        {status === "running" && (
+          <span className="flex items-center gap-1.5 text-xs text-white/40">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+            Running
+          </span>
+        )}
+        {output.length > 0 && status === "stopped" && (
+          <button
+            onClick={() => { setOutput([]); setLineCount(0); }}
+            className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white/40 hover:text-white/60 transition-colors"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      {/* Output terminal */}
+      {output.length > 0 && (
+        <div
+          ref={outputRef}
+          className="bg-black/50 rounded-lg p-3 max-h-64 overflow-y-auto font-mono text-[11px] leading-relaxed text-white/70"
+        >
+          {output.map((line, i) => (
+            <div key={i} className={line.includes("[stderr]") ? "text-red-400/70" : ""}>
+              {line}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );

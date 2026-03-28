@@ -6,12 +6,7 @@ import {
   getMarketplaceStats,
   addActivity,
 } from "@/lib/server/marketplaceStore";
-import { getProfile, seedProfiles } from "@/lib/server/agentProfiles";
-
-let seeded = false;
-function ensureSeeded() {
-  if (!seeded) { seedProfiles(); seeded = true; }
-}
+import { getProfile, ensureSeeded } from "@/lib/server/agentProfiles";
 
 // GET /api/marketplace — list all listings (optional ?status=available)
 export async function GET(req: NextRequest) {

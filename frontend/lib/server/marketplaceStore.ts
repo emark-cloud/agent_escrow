@@ -62,6 +62,10 @@ export function getListingById(id: string): ServiceListing | undefined {
   return readListings().find((l) => l.id === id);
 }
 
+export function getListingByAgreementId(agreementId: string): ServiceListing | undefined {
+  return readListings().find((l) => l.agreement_id === agreementId);
+}
+
 export function createListing(listing: Omit<ServiceListing, "id" | "status" | "created_at" | "updated_at">): ServiceListing {
   const data = readListings();
   const now = new Date().toISOString();
@@ -131,6 +135,24 @@ export function addActivity(event: Omit<MarketplaceEvent, "timestamp">): void {
   // Keep last 200 events
   if (data.length > 200) data.splice(0, data.length - 200);
   writeActivity(data);
+}
+
+// --- Marketplace-aware activity logging for agreement actions ---
+
+/**
+ * If the agreement is linked to a marketplace listing, log an activity event.
+ * Safe to call for any agreement — silently does nothing if not marketplace-related.
+ */
+export function logMarketplaceActivity(
+  agreementId: string,
+  type: MarketplaceEvent["type"],
+  details: string,
+  fallbackAgent?: string
+): void {
+  const listing = getListingByAgreementId(agreementId);
+  if (!listing) return; // Not a marketplace agreement
+  const agent = fallbackAgent || listing.claimed_by || listing.provider_agent || "unknown";
+  addActivity({ agent, type, details });
 }
 
 // --- Stats ---

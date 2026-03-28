@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateMilestoneIndex } from "@/lib/server/auth";
 import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { logMarketplaceActivity } from "@/lib/server/marketplaceStore";
 
 export async function POST(
   req: NextRequest,
@@ -19,17 +20,20 @@ export async function POST(
     const msIdx = validateMilestoneIndex(body.milestone_index);
     if (msIdx instanceof NextResponse) return msIdx;
 
+    const walletId = req.headers.get("x-wallet-id") || "unknown";
     const wait = req.nextUrl.searchParams.get("wait") === "true";
     if (wait) {
       const result = await serverWriteAndWait(wallet.privateKey, "check_sla", [id, msIdx], {
         agreementId: id,
         action: "check_sla",
-        wallet: req.headers.get("x-wallet-id") || "unknown",
+        wallet: walletId,
       });
+      logMarketplaceActivity(id, "sla_check", `SLA check on ${id} milestone ${msIdx}`, walletId);
       return consensusResultResponse(result);
     }
 
     const txHash = await serverWriteContract(wallet.privateKey, "check_sla", [id, msIdx]);
+    logMarketplaceActivity(id, "sla_check", `SLA check on ${id} milestone ${msIdx}`, walletId);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

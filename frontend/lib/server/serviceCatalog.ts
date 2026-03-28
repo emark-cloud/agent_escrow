@@ -169,7 +169,3 @@ export function pickRandomTemplate(category?: string): ServiceTemplate {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
-// Get all unique categories
-export function getCategories(): string[] {
-  return [...new Set(SERVICE_CATALOG.map((t) => t.category))];
-}

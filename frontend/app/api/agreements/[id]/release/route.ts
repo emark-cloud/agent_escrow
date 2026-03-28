@@ -1,6 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateMilestoneIndex } from "@/lib/server/auth";
 import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { getListingByAgreementId, updateListingStatus, addActivity } from "@/lib/server/marketplaceStore";
+
+function markListingCompleted(agreementId: string) {
+  const listing = getListingByAgreementId(agreementId);
+  if (listing) {
+    updateListingStatus(listing.id, "completed");
+    addActivity({ agent: listing.claimed_by || "unknown", type: "deal_completed", details: `Deal ${agreementId} completed — payment released` });
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -26,10 +35,12 @@ export async function POST(
         action: "release",
         wallet: req.headers.get("x-wallet-id") || "unknown",
       });
+      markListingCompleted(id);
       return consensusResultResponse(result);
     }
 
     const txHash = await serverWriteContract(wallet.privateKey, "release_payment", [id, msIdx]);
+    markListingCompleted(id);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

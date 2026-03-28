@@ -42,6 +42,14 @@ tx-activity.json
 # debug artifacts
 tx-debug.json
 
+# marketplace runtime data
+marketplace.json
+marketplace-activity.json
+agent-profiles.json
+
+# court deployment tracking
+court-deployments.json
+
 # vercel
 .vercel
 
