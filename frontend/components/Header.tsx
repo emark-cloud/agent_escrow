@@ -14,6 +14,12 @@ export function Header() {
         </Link>
         <nav className="flex items-center gap-6">
           <Link
+            href="/marketplace"
+            className="text-sm text-white/60 hover:text-white transition-colors"
+          >
+            Marketplace
+          </Link>
+          <Link
             href="/agreements"
             className="text-sm text-white/60 hover:text-white transition-colors"
           >

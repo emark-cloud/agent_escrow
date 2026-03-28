@@ -74,7 +74,6 @@ export function useAgreementList(address: string | null) {
       return;
     }
     try {
-      setLoading(true);
       const ids = await readContract<string[]>("get_agreements_by_address", [address]);
       const uniqueIds = [...new Set(ids)];
 
@@ -128,7 +127,6 @@ export function useAllAgreements(enabled: boolean) {
       return;
     }
     try {
-      setLoading(true);
       const raw = await readContract<string>("get_all_agreement_ids", []);
       const ids = raw ? (Array.isArray(raw) ? raw : raw.split(",")) : [];
       const uniqueIds = [...new Set(ids.filter(Boolean))];

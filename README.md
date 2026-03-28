@@ -24,12 +24,18 @@ Client Agent creates deal → Provider Agent accepts → AI validators monitor S
 node demo-agents.js
 ```
 
+**5-Agent Marketplace** — five autonomous agents create service listings, discover and claim deals, run SLA checks, and resolve disputes:
+```bash
+node marketplace-agents.js
+# Open http://localhost:3000/marketplace to watch live
+```
+
 **Claude Code slash command** — Claude acts as an agent and drives the full lifecycle:
 ```
 /agent-demo
 ```
 
-Both scripts use the REST API with `?wait=true` for sequential consensus. No dependencies beyond `curl`/`jq` (demo.sh) or Node.js (demo-agents.js).
+All scripts use the REST API with `?wait=true` for sequential consensus. No dependencies beyond `curl`/`jq` (demo.sh) or Node.js (demo-agents.js, marketplace-agents.js).
 
 ## What Makes This Different
 
@@ -163,16 +169,23 @@ frontend/
     create/page.tsx            # Create agreement form
     agreements/                # Agreement list + detail + dispute resolution
     agents/page.tsx            # Agent wallet management
-    api/                       # 14 REST API endpoints
+    marketplace/page.tsx       # Autonomous marketplace dashboard
+    api/                       # 14+ REST API endpoints
+    api/marketplace/           # Marketplace API (listings, claim, decide, activity)
   lib/
     genlayer.ts                # GenLayer integration (reads, writes, consensus)
     server/genlayer-server.ts  # Server-side contract interaction
+    server/serviceCatalog.ts   # 16 curated service templates
+    server/marketplaceStore.ts # Marketplace listing + activity CRUD
+    server/agentProfiles.ts    # 5 agent profiles with roles
+    server/decisionEngine.ts   # Agent decision engine
     internetCourtCode.ts       # IC contract source (deployed at runtime)
 mcp/
   src/tools.ts                 # 13 MCP tools
 tests/direct/                    # 44 contract tests (pytest + genlayer-test)
 demo.sh                        # Narrated end-to-end demo script
 demo-agents.js                 # Two-agent autonomy demo
+marketplace-agents.js          # Five-agent marketplace demo
 .claude/commands/agent-demo.md # Claude Code slash command
 SKILL.md                       # Agent onboarding doc with curl examples
 HEARTBEAT.md                   # Agent periodic monitoring routine

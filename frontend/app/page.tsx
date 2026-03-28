@@ -1,6 +1,251 @@
 "use client";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { useWallet } from "@/hooks/useWallet";
+
+const FLOW_STEPS = [
+  {
+    id: "create",
+    label: "Create Agreement",
+    detail: "Client defines milestones, SLA criteria, and monitoring URLs",
+    icon: "📝",
+    color: "violet",
+  },
+  {
+    id: "accept",
+    label: "Provider Accepts",
+    detail: "Provider reviews terms and accepts the escrow deal",
+    icon: "🤝",
+    color: "blue",
+  },
+  {
+    id: "monitor",
+    label: "AI SLA Monitoring",
+    detail: "Validators fetch live URLs and evaluate compliance via LLM consensus",
+    icon: "🔍",
+    color: "cyan",
+  },
+  {
+    id: "branch",
+    label: "",
+    detail: "",
+    icon: "",
+    color: "",
+  },
+  // Happy path
+  {
+    id: "verify",
+    label: "Verify & Pay",
+    detail: "SLA passes verified, payment auto-released to provider",
+    icon: "✅",
+    color: "green",
+    path: "happy",
+  },
+  // Dispute path
+  {
+    id: "dispute",
+    label: "Dispute Filed",
+    detail: "SLA failures detected, client disputes the milestone",
+    icon: "⚠️",
+    color: "red",
+    path: "dispute",
+  },
+  {
+    id: "court",
+    label: "Internet Court",
+    detail: "AI jury evaluates evidence from both parties",
+    icon: "⚖️",
+    color: "amber",
+    path: "dispute",
+  },
+  {
+    id: "verdict",
+    label: "Verdict Applied",
+    detail: "Binding verdict settles the escrow automatically",
+    icon: "🏛️",
+    color: "purple",
+    path: "dispute",
+  },
+];
+
+const COLOR_MAP: Record<string, { bg: string; border: string; text: string; glow: string }> = {
+  violet: { bg: "bg-violet-500/10", border: "border-violet-500/30", text: "text-violet-400", glow: "shadow-violet-500/20" },
+  blue: { bg: "bg-blue-500/10", border: "border-blue-500/30", text: "text-blue-400", glow: "shadow-blue-500/20" },
+  cyan: { bg: "bg-cyan-500/10", border: "border-cyan-500/30", text: "text-cyan-400", glow: "shadow-cyan-500/20" },
+  green: { bg: "bg-green-500/10", border: "border-green-500/30", text: "text-green-400", glow: "shadow-green-500/20" },
+  red: { bg: "bg-red-500/10", border: "border-red-500/30", text: "text-red-400", glow: "shadow-red-500/20" },
+  amber: { bg: "bg-amber-500/10", border: "border-amber-500/30", text: "text-amber-400", glow: "shadow-amber-500/20" },
+  purple: { bg: "bg-purple-500/10", border: "border-purple-500/30", text: "text-purple-400", glow: "shadow-purple-500/20" },
+};
+
+function FlowNode({ step, active, visible }: { step: typeof FLOW_STEPS[0]; active: boolean; visible: boolean }) {
+  const colors = COLOR_MAP[step.color] || COLOR_MAP.violet;
+  return (
+    <div
+      className={`flow-node ${colors.bg} ${colors.border} border rounded-xl p-4 transition-all duration-500 ${
+        visible ? "opacity-100" : "opacity-0"
+      } ${active ? `flow-active shadow-lg ${colors.glow}` : ""}`}
+      style={{ animationDelay: "0s" }}
+    >
+      <div className="flex items-center gap-3">
+        <span className="text-2xl">{step.icon}</span>
+        <div>
+          <div className={`font-semibold text-sm ${colors.text}`}>{step.label}</div>
+          <div className="text-xs text-white/40 mt-0.5">{step.detail}</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimatedFlow() {
+  const [activeStep, setActiveStep] = useState(0);
+  const [showDispute, setShowDispute] = useState(false);
+
+  const totalSteps = showDispute ? 8 : 5;
+
+  const advance = useCallback(() => {
+    setActiveStep((prev) => {
+      const next = prev + 1;
+      if (next >= totalSteps) {
+        // Reset and toggle path
+        setTimeout(() => {
+          setShowDispute((d) => !d);
+          setActiveStep(0);
+        }, 2000);
+        return prev;
+      }
+      // Skip branch node
+      if (FLOW_STEPS[next]?.id === "branch") {
+        return next + (showDispute ? 2 : 1);
+      }
+      return next;
+    });
+  }, [totalSteps, showDispute]);
+
+  useEffect(() => {
+    setActiveStep(0);
+  }, [showDispute]);
+
+  useEffect(() => {
+    const timer = setInterval(advance, 2500);
+    return () => clearInterval(timer);
+  }, [advance]);
+
+  // Map step index to the steps we actually show
+  const visibleSteps = showDispute
+    ? [
+        FLOW_STEPS[0], // create
+        FLOW_STEPS[1], // accept
+        FLOW_STEPS[2], // monitor
+        FLOW_STEPS[5], // dispute
+        FLOW_STEPS[6], // court
+        FLOW_STEPS[7], // verdict
+      ]
+    : [
+        FLOW_STEPS[0], // create
+        FLOW_STEPS[1], // accept
+        FLOW_STEPS[2], // monitor
+        FLOW_STEPS[4], // verify & pay
+      ];
+
+  // Map activeStep to the index in visibleSteps
+  const activeIndex = (() => {
+    if (!showDispute) {
+      // happy: 0,1,2 map directly, then 4 maps to index 3
+      if (activeStep <= 2) return activeStep;
+      if (activeStep >= 4) return 3;
+      return -1;
+    } else {
+      // dispute: 0,1,2 map directly, 5->3, 6->4, 7->5
+      if (activeStep <= 2) return activeStep;
+      if (activeStep === 5) return 3;
+      if (activeStep === 6) return 4;
+      if (activeStep === 7) return 5;
+      return -1;
+    }
+  })();
+
+  return (
+    <div>
+      {/* Path toggle */}
+      <div className="flex items-center justify-center gap-3 mb-10">
+        <button
+          onClick={() => { setShowDispute(false); setActiveStep(0); }}
+          className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-all ${
+            !showDispute
+              ? "bg-green-500/15 border-green-500/30 text-green-400"
+              : "bg-white/5 border-white/10 text-white/40 hover:text-white/60"
+          }`}
+        >
+          Happy Path
+        </button>
+        <button
+          onClick={() => { setShowDispute(true); setActiveStep(0); }}
+          className={`px-4 py-1.5 rounded-full text-xs font-medium border transition-all ${
+            showDispute
+              ? "bg-red-500/15 border-red-500/30 text-red-400"
+              : "bg-white/5 border-white/10 text-white/40 hover:text-white/60"
+          }`}
+        >
+          Dispute Path
+        </button>
+      </div>
+
+      {/* Flow */}
+      <div className="flex flex-col gap-3 max-w-lg mx-auto">
+        {visibleSteps.map((step, i) => (
+          <div key={step.id}>
+            {i > 0 && (
+              <div className="flex justify-center py-1">
+                <div
+                  className={`w-px h-6 transition-all duration-500 ${
+                    i <= activeIndex ? "bg-white/20" : "bg-white/5"
+                  }`}
+                />
+              </div>
+            )}
+
+            {/* Branch indicator */}
+            {i === 3 && (
+              <div className="flex justify-center mb-2">
+                <span className={`text-[10px] font-mono px-2 py-0.5 rounded-full border ${
+                  showDispute
+                    ? "text-red-400/60 border-red-500/20 bg-red-500/5"
+                    : "text-green-400/60 border-green-500/20 bg-green-500/5"
+                }`}>
+                  {showDispute ? "SLA FAILED" : "SLA PASSED"}
+                </span>
+              </div>
+            )}
+
+            <FlowNode
+              step={step}
+              active={i === activeIndex}
+              visible={i <= activeIndex + 1}
+            />
+          </div>
+        ))}
+      </div>
+
+      {/* Legend */}
+      <div className="flex items-center justify-center gap-6 mt-8 text-[10px] text-white/30">
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-violet-500/40" />
+          Agent action
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-cyan-500/40" />
+          AI validator consensus
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2 h-2 rounded-full bg-amber-500/40" />
+          Internet Court
+        </span>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const { isConnected } = useWallet();
@@ -51,38 +296,14 @@ export default function Home() {
         </div>
       </section>
 
-      {/* How it works */}
+      {/* Animated Flow */}
       <section className="max-w-6xl mx-auto px-6 py-20">
-        <h2 className="text-2xl font-bold mb-12 text-center">How it works</h2>
-        <div className="grid md:grid-cols-3 gap-6">
-          {[
-            {
-              step: "01",
-              title: "Create Agreement",
-              desc: "Define milestones with monitoring URLs and SLA criteria. The contract holds the escrow.",
-            },
-            {
-              step: "02",
-              title: "Live SLA Monitoring",
-              desc: "The contract fetches real web data and uses AI to evaluate compliance. No oracles needed.",
-            },
-            {
-              step: "03",
-              title: "Auto-settle or Dispute",
-              desc: "Passing SLAs trigger payment release. Failures escalate to Internet Court for AI jury verdict.",
-            },
-          ].map((item) => (
-            <div key={item.step} className="glass-card rounded-xl p-6">
-              <div className="text-sm font-mono text-violet-400 mb-3">
-                {item.step}
-              </div>
-              <h3 className="text-lg font-semibold mb-2">{item.title}</h3>
-              <p className="text-sm text-white/40 leading-relaxed">
-                {item.desc}
-              </p>
-            </div>
-          ))}
-        </div>
+        <h2 className="text-2xl font-bold mb-4 text-center">How it works</h2>
+        <p className="text-white/40 text-sm text-center mb-10 max-w-lg mx-auto">
+          Two AI agents negotiate and complete a deal autonomously.
+          Toggle between the happy path and dispute resolution flow.
+        </p>
+        <AnimatedFlow />
       </section>
 
       {/* Key Features */}

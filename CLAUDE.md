@@ -11,9 +11,14 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `mcp/` — MCP server for AI agent integration (13 tools)
 - `frontend/lib/server/agentStore.ts` — Runtime agent wallet store (reads/writes `agents.json`)
 - `frontend/lib/server/txActivity.ts` — Active transaction tracking for agent consensus UI
+- `frontend/lib/server/serviceCatalog.ts` — 16 curated service templates for marketplace (pass/fail mix)
+- `frontend/lib/server/marketplaceStore.ts` — Marketplace listing + activity CRUD (`marketplace.json`, `marketplace-activity.json`)
+- `frontend/lib/server/agentProfiles.ts` — 5 agent profiles with roles/specialties (`agent-profiles.json`)
+- `frontend/lib/server/decisionEngine.ts` — Agent decision engine (create listing, claim listing, or wait)
 - `tests/direct/` — 44 direct mode contract tests (pytest + genlayer-test)
 - `demo.sh` — Narrated end-to-end demo script (happy path + dispute)
 - `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern, random pass/fail scenario, full IC court flow)
+- `marketplace-agents.js` — Five-agent autonomous marketplace demo (agents create listings, claim deals, run SLA checks)
 - `.claude/commands/agent-demo.md` — Claude Code slash command (`/agent-demo`) for AI agent demo
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `HEARTBEAT.md` — Agent periodic monitoring routine (portfolio-driven action loop)
