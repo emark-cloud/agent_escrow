@@ -901,3 +901,92 @@ else:
 **Skill File (`SKILL.md`):** Executable documentation with curl examples for agents that aren't MCP-compatible. Include a pre-flight health check endpoint, heartbeat pattern (portfolio endpoint), and error recovery steps.
 
 **Portfolio/Heartbeat pattern:** A single endpoint that returns all agreements + milestones + actionable items for an address. Agents call it periodically to discover work (SLA checks to run, payments to release, disputes to respond to).
+
+---
+
+## Part 5: Cross-Chain Bridge (LayerZero V2)
+
+AgentEscrow bridges AI jury verdicts from GenLayer to Base Sepolia via LayerZero V2, using zkSync Era Sepolia as a hub. This provides verifiable on-chain proof of dispute outcomes on a widely-used L2.
+
+### 5.1 Architecture
+
+```
+GenLayer Bradbury → Relay Service → zkSync Era Sepolia (BridgeForwarder) → LayerZero V2 → Base Sepolia (BridgeReceiver → VerdictRegistry)
+```
+
+The bridge is **additive** — escrow settlement happens on GenLayer regardless. Base provides a transparency/verification layer.
+
+### 5.2 Deployed Contracts
+
+| Chain | Contract | Address |
+|-------|----------|---------|
+| GenLayer Bradbury | BridgeSender.py | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
+| GenLayer Bradbury | BridgeReceiver.py | `0x47e4FcAb492C3Ad56196f972A993E113535542CF` |
+| zkSync Era Sepolia | BridgeReceiver.sol | `0x2c51596a49e6e8973b294adaf49dca651f38574b` |
+| zkSync Era Sepolia | BridgeForwarder.sol | `0xed7c0744fb8543de9650db42fd7dc2ccc015e581` |
+| Base Sepolia | BridgeSender.sol | `0x2c51596a49E6E8973b294adaf49DcA651f38574b` |
+| Base Sepolia | BridgeReceiver.sol | `0xed7C0744FB8543De9650DB42fd7Dc2CcC015E581` |
+| Base Sepolia | VerdictRegistry.sol | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |
+
+### 5.3 LayerZero V2 Configuration
+
+- **LayerZero Endpoint (all chains):** `0x6EDCE65403992e310A62460808c4b910D972f10f`
+- **Base Sepolia EID:** 40245
+- **zkSync Era Sepolia EID:** 40305
+
+Trust relationships are bidirectional between Base and zkSync via `setDestinationBridgeAddresses`, `setTrustedForwarder`, and `setZkSyncBridgeReceiver`.
+
+### 5.4 Relay Service
+
+The relay (`relay/`) polls GenLayer `BridgeSender.py` for verdict messages and forwards them through the zkSync hub to Base. Key files:
+
+- `relay/src/genlayer-to-evm.ts` — Polls for unrelayed verdicts, calls zkSync `BridgeForwarder`
+- `relay/src/evm-to-genlayer.ts` — (stretch) Polls Base for dispute events
+- `relay/src/index.ts` — Entry point, runs relay loops on cron schedule
+
+Start with: `cd relay && npx tsx src/index.ts`
+
+### 5.5 zksolc Compilation
+
+zkSync Era requires bytecode compiled with `zksolc`, not standard `solc`. Standard Solidity bytecode will deploy but transactions will fail silently (`status: 0x0`).
+
+```bash
+# Download zksolc and solc-zksync (the zkSync fork of solc)
+# zksolc v1.5+ requires the zkSync fork, NOT standard solc
+./zksolc --solc ./solc-zksync --standard-json < input.json > output.json
+```
+
+**Common pitfall:** The `@matterlabs/hardhat-zksync` plugin is incompatible with Hardhat v3 (`ERR_PACKAGE_PATH_NOT_EXPORTED`). Use zksolc CLI directly instead.
+
+### 5.6 Deployment Scripts
+
+Deploy scripts are in `deploy/` and use ethers.js directly (not Hardhat's `ethers` export, which doesn't exist in v3):
+
+- `deploy/deploy-base.ts` — Deploy BridgeSender, BridgeReceiver, VerdictRegistry to Base Sepolia
+- `deploy/deploy-zksync-raw.ts` — Deploy to zkSync using raw `fetch()` RPC (ethers times out on slow zkSync RPC)
+- `deploy/configure-trust.ts` — Configure LayerZero trust relationships
+- `deploy/authorize-relayer.ts` — Authorize relay wallet on GenLayer BridgeReceiver (uses `genlayer-js` because GenLayer CLI `--args` doesn't encode arguments properly)
+
+### 5.7 GenLayer CLI Args Bug
+
+The `genlayer write` CLI does not properly encode arguments into calldata on Bradbury — all args appear as empty bytes. Workaround: use `genlayer-js` library directly:
+
+```typescript
+import { createClient, createAccount } from "genlayer-js";
+import { testnetBradbury } from "genlayer-js/chains";
+
+const account = createAccount(`0x${privateKey}` as `0x${string}`);
+const client = createClient({ chain: testnetBradbury, account });
+await client.writeContract({
+  address: contractAddress as `0x${string}`,
+  functionName: "method_name",
+  args: [arg1, arg2],
+});
+```
+
+### 5.8 Environment Variables
+
+Bridge configuration is stored in three places:
+- `.env` (root) — Shared config for Hardhat, relay, and deploy scripts
+- `relay/.env` — Relay-specific config (sync intervals, RPC URLs)
+- `frontend/.env.local` — Frontend reads for cross-chain API endpoints

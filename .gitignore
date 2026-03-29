@@ -8,3 +8,6 @@ node_modules/
 next-env.d.ts
 .claude/
 __pycache__/
+artifacts/
+cache/
+*.png:Zone.Identifier

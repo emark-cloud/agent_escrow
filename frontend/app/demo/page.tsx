@@ -76,6 +76,63 @@ export default function DemoPage() {
     if (apiKey) localStorage.setItem("agentEscrow_apiKey", apiKey);
   }, [apiKey]);
 
+  // Restore scripted demo state from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem("agentEscrow_demoState");
+      if (!saved) return;
+      const state = JSON.parse(saved);
+      if (state.steps?.length > 0) {
+        // Mark any "running" steps as interrupted
+        const restored = state.steps.map((s: any) => ({
+          ...s,
+          result: s.result.status === "running"
+            ? { ...s.result, status: "failed", error: "Interrupted — navigated away" }
+            : s.result,
+        }));
+        setSteps(restored);
+        setContext(state.context);
+        setFlow(state.flow);
+        setTotalElapsed(state.totalElapsed || 0);
+        setIsDone(state.isDone || false);
+        // If it was running, mark remaining pending steps as skipped
+        if (state.isRunning) {
+          setSteps((prev) =>
+            prev.map((s) =>
+              s.result.status === "pending"
+                ? { ...s, result: { status: "skipped" as StepStatus } }
+                : s
+            )
+          );
+          setIsDone(true);
+        }
+      }
+    } catch {}
+  }, []);
+
+  // Persist scripted demo state to sessionStorage
+  useEffect(() => {
+    if (steps.length === 0) return;
+    try {
+      // Strip response data to keep storage small — keep only status, elapsed, error, httpCode
+      const lightweight = steps.map((s) => ({
+        ...s,
+        extractors: undefined,
+        result: {
+          status: s.result.status,
+          elapsed: s.result.elapsed,
+          error: s.result.error,
+          httpCode: s.result.httpCode,
+          retries: s.result.retries,
+        },
+      }));
+      sessionStorage.setItem(
+        "agentEscrow_demoState",
+        JSON.stringify({ steps: lightweight, context, flow, isRunning, isDone, totalElapsed })
+      );
+    } catch {}
+  }, [steps, context, flow, isRunning, isDone, totalElapsed]);
+
   // Elapsed timer
   useEffect(() => {
     if (!isRunning) return;
@@ -521,14 +578,6 @@ export default function DemoPage() {
         </p>
         <div className="grid md:grid-cols-2 gap-4">
           <AutonomousDemoPanel
-            id="agents"
-            title="Two-Agent Demo"
-            description="Alice and Bob autonomously create a deal, run SLA checks, and complete or dispute it via Internet Court."
-            icon="🤖"
-            color="blue"
-            apiKey={apiKey}
-          />
-          <AutonomousDemoPanel
             id="marketplace"
             title="5-Agent Marketplace"
             description="Five agents create service listings, discover and claim deals, and process SLA checks autonomously. Watch live at /marketplace."
@@ -659,8 +708,8 @@ function AutonomousDemoPanel({
 }) {
   const [status, setStatus] = useState<"stopped" | "running" | "stopping">("stopped");
   const [output, setOutput] = useState<string[]>([]);
-  const [lineCount, setLineCount] = useState(0);
   const outputRef = useRef<HTMLDivElement>(null);
+  const lineCountRef = useRef(0);
 
   // Check if already running on mount
   useEffect(() => {
@@ -672,7 +721,7 @@ function AutonomousDemoPanel({
           setStatus("running");
           if (data.output?.length > 0) {
             setOutput(data.output);
-            setLineCount(data.total);
+            lineCountRef.current = data.total;
           }
         }
       } catch {}
@@ -680,19 +729,19 @@ function AutonomousDemoPanel({
     checkStatus();
   }, [id]);
 
-  // Poll output when running
+  // Poll output when running or stopping
   useEffect(() => {
-    if (status !== "running") return;
+    if (status !== "running" && status !== "stopping") return;
     let cancelled = false;
 
     const poll = async () => {
       while (!cancelled) {
         try {
-          const resp = await fetch(`/api/demos?id=${id}&since=${lineCount}`);
+          const resp = await fetch(`/api/demos?id=${id}&since=${lineCountRef.current}`);
           const data = await resp.json();
           if (data.output?.length > 0) {
             setOutput((prev) => [...prev, ...data.output].slice(-300));
-            setLineCount(data.total);
+            lineCountRef.current = data.total;
           }
           if (data.status === "stopped") {
             setStatus("stopped");
@@ -705,7 +754,7 @@ function AutonomousDemoPanel({
 
     poll();
     return () => { cancelled = true; };
-  }, [status, id, lineCount]);
+  }, [status, id]);
 
   // Auto-scroll
   useEffect(() => {
@@ -716,7 +765,7 @@ function AutonomousDemoPanel({
 
   async function start() {
     setOutput([]);
-    setLineCount(0);
+    lineCountRef.current = 0;
     try {
       const resp = await fetch("/api/demos", {
         method: "POST",
@@ -787,7 +836,7 @@ function AutonomousDemoPanel({
         )}
         {output.length > 0 && status === "stopped" && (
           <button
-            onClick={() => { setOutput([]); setLineCount(0); }}
+            onClick={() => { setOutput([]); lineCountRef.current = 0; }}
             className="px-3 py-1.5 bg-white/5 border border-white/10 rounded-lg text-xs text-white/40 hover:text-white/60 transition-colors"
           >
             Clear

@@ -493,7 +493,7 @@ export default function Home() {
       {/* Features Grid */}
       <section className="max-w-6xl mx-auto px-6 py-16 border-t border-white/5">
         <h2 className="text-2xl font-bold mb-8 text-center">What makes it different</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
           <FeatureCard
             accent="violet"
             icon={
@@ -524,6 +524,16 @@ export default function Home() {
             }
             title="Autonomous Marketplace"
             description="5 AI agents autonomously discover, negotiate, and transact monitoring services. Providers list capabilities, clients claim deals."
+          />
+          <FeatureCard
+            accent="sky"
+            icon={
+              <svg className="w-5 h-5 text-sky-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
+              </svg>
+            }
+            title="Cross-Chain Verdicts"
+            description="AI jury verdicts bridge trustlessly from GenLayer to Base Sepolia via LayerZero V2 and zkSync hub, providing verifiable on-chain proof."
           />
           <FeatureCard
             accent="cyan"

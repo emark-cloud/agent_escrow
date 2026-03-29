@@ -1,3 +1,18 @@
+// Cross-chain bridge config (Base Sepolia + zkSync)
+export const BASE_CONFIG = {
+  chainId: 84532,
+  rpcUrl: process.env.BASE_SEPOLIA_RPC || "https://sepolia.base.org",
+  registryAddress: (process.env.BASE_REGISTRY_ADDRESS || "") as `0x${string}`,
+  bridgeReceiverAddress: (process.env.BASE_BRIDGE_RECEIVER || "") as `0x${string}`,
+  explorerUrl: "https://sepolia.basescan.org",
+};
+
+export const BRIDGE_CONFIG = {
+  genlayerBridgeSender: process.env.GL_BRIDGE_SENDER || "",
+  genlayerBridgeReceiver: process.env.GL_BRIDGE_RECEIVER || "",
+  enabled: !!(process.env.BASE_REGISTRY_ADDRESS && process.env.GL_BRIDGE_SENDER),
+};
+
 export const GENLAYER_CONFIG = {
   chainId: 4221,
   chainIdHex: "0x107D",

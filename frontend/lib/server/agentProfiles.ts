@@ -88,13 +88,11 @@ export function upsertProfile(profile: AgentProfile): void {
   writeProfiles(data);
 }
 
-let _seeded = false;
-
-/** Ensure seed profiles exist (idempotent, cheap after first call). */
+/** Ensure seed profiles exist (idempotent, re-checks if file was deleted). */
 export function ensureSeeded(): void {
-  if (_seeded) return;
-  seedProfiles();
-  _seeded = true;
+  if (!existsSync(PROFILES_FILE) || readProfiles().length < SEED_PROFILES.length) {
+    seedProfiles();
+  }
 }
 
 export function seedProfiles(): AgentProfile[] {

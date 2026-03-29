@@ -13,6 +13,7 @@ import { useAgentActivity } from "@/hooks/useAgentActivity";
 import { useAgentWallets } from "@/hooks/useAgentWallets";
 import { DisputePanel } from "./DisputePanel";
 import { ResolvePanel } from "./ResolvePanel";
+import { CrossChainStatus } from "./CrossChainStatus";
 
 export default function AgreementDetail({
   params,
@@ -264,12 +265,16 @@ export default function AgreementDetail({
                     {ms.dispute_reason}
                   </div>
                 )}
+                <CrossChainStatus agreementId={id} milestoneIndex={i} />
               </div>
             )}
             {ms.status === 5 && (
               <div className="text-xs text-gray-400 font-medium">
                 Failed
               </div>
+            )}
+            {ms.status === 6 && (
+              <CrossChainStatus agreementId={id} milestoneIndex={i} />
             )}
           </div>
         ))}

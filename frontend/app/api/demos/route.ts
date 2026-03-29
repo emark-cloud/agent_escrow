@@ -4,17 +4,16 @@ import { spawn, type ChildProcess } from "child_process";
 import { join } from "path";
 
 // Track running demo processes
-const runningDemos: Map<string, { process: ChildProcess; output: string[]; startedAt: number }> = new Map();
+const runningDemos: Map<string, { process: ChildProcess; output: string[]; startedAt: number; exited: boolean }> = new Map();
 
 const MAX_OUTPUT_LINES = 500;
 const PROJECT_ROOT = join(process.cwd(), "..");
 
+function isRunning(demo: { process: ChildProcess; exited: boolean }): boolean {
+  return !demo.exited;
+}
+
 const DEMO_SCRIPTS: Record<string, { cmd: string; args: string[]; label: string }> = {
-  agents: {
-    cmd: "node",
-    args: [join(PROJECT_ROOT, "demo-agents.js"), "http://localhost:3000"],
-    label: "Two-Agent Autonomous Demo",
-  },
   marketplace: {
     cmd: "node",
     args: [join(PROJECT_ROOT, "marketplace-agents.js"), "http://localhost:3000"],
@@ -33,11 +32,11 @@ export async function GET(req: NextRequest) {
     if (!demo) {
       return NextResponse.json({ id: demoId, status: "stopped", output: [], total: 0 });
     }
-    const isRunning = demo.process.exitCode === null;
+    const running = isRunning(demo);
     const output = demo.output.slice(since);
     return NextResponse.json({
       id: demoId,
-      status: isRunning ? "running" : "stopped",
+      status: running ? "running" : "stopped",
       exitCode: demo.process.exitCode,
       output,
       total: demo.output.length,
@@ -51,7 +50,7 @@ export async function GET(req: NextRequest) {
     return {
       id,
       label: script.label,
-      status: running && running.process.exitCode === null ? "running" : "stopped",
+      status: running && isRunning(running) ? "running" : "stopped",
       lines: running?.output.length || 0,
       startedAt: running?.startedAt || null,
     };
@@ -74,7 +73,7 @@ export async function POST(req: NextRequest) {
 
   if (reqAction === "stop") {
     const demo = runningDemos.get(id);
-    if (demo && demo.process.exitCode === null) {
+    if (demo && isRunning(demo)) {
       demo.process.kill("SIGTERM");
       return NextResponse.json({ id, status: "stopping" });
     }
@@ -83,7 +82,7 @@ export async function POST(req: NextRequest) {
 
   // Start
   const existing = runningDemos.get(id);
-  if (existing && existing.process.exitCode === null) {
+  if (existing && isRunning(existing)) {
     return NextResponse.json({ error: `Demo ${id} is already running` }, { status: 409 });
   }
 
@@ -116,11 +115,14 @@ export async function POST(req: NextRequest) {
     }
   });
 
+  const demoEntry = { process: child, output, startedAt: Date.now(), exited: false };
+
   child.on("exit", (code) => {
     output.push(`\n--- Demo exited with code ${code} ---`);
+    demoEntry.exited = true;
   });
 
-  runningDemos.set(id, { process: child, output, startedAt: Date.now() });
+  runningDemos.set(id, demoEntry);
 
   return NextResponse.json({ id, status: "started", pid: child.pid }, { status: 201 });
 }

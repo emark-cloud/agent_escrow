@@ -12,8 +12,9 @@ import {
 import { addActiveTx, removeActiveTx } from "@/lib/server/txActivity";
 import { saveCourtDeployment, getCourtAddress } from "@/lib/server/courtStore";
 import { INTERNET_COURT_CODE } from "@/lib/internetCourtCode";
-import { GENLAYER_CONFIG } from "@/lib/config";
+import { GENLAYER_CONFIG, BRIDGE_CONFIG, BASE_CONFIG } from "@/lib/config";
 import type { Milestone } from "@/types/agreement";
+import { keccak256, toBytes } from "viem";
 
 export const dynamic = "force-dynamic";
 
@@ -232,10 +233,39 @@ export async function POST(
         const result = await serverWaitForConsensus(txHash);
         removeActiveTx(id, "apply_verdict");
 
+        // Cross-chain: send verdict to BridgeSender.py for LayerZero bridging to Base
+        let bridgeTxHash: string | null = null;
+        if (BRIDGE_CONFIG.enabled && BRIDGE_CONFIG.genlayerBridgeSender) {
+          try {
+            const reasoningHash = keccak256(toBytes(icStatus.reasoning || ""));
+            // ABI encode: (string agreementId, uint256 milestoneIndex, string verdict, bytes32 reasoningHash)
+            const encoder = new TextEncoder();
+            const verdictData = encoder.encode(
+              JSON.stringify({ agreementId: id, milestoneIndex: msIdx, verdict: icStatus.verdict, reasoningHash })
+            );
+
+            bridgeTxHash = await serverWriteContractAt(
+              wallet.privateKey,
+              BRIDGE_CONFIG.genlayerBridgeSender,
+              "send_message",
+              [BASE_CONFIG.chainId, BASE_CONFIG.registryAddress, verdictData]
+            );
+            // Fire-and-forget: don't wait for consensus to avoid blocking the response
+            console.log(`[Bridge] Verdict sent to BridgeSender: ${bridgeTxHash}`);
+          } catch (bridgeErr) {
+            console.error("[Bridge] Failed to send verdict to bridge (non-blocking):", bridgeErr);
+          }
+        }
+
         return NextResponse.json({
           ...result,
           verdict: icStatus.verdict,
           reasoning: icStatus.reasoning,
+          bridge: bridgeTxHash ? {
+            txHash: bridgeTxHash,
+            status: "pending",
+            path: "GenLayer → Relay → zkSync → LayerZero V2 → Base Sepolia",
+          } : undefined,
         });
       }
 

@@ -353,6 +353,27 @@ api POST "/api/agreements/$DISPUTE_ID/court" "Apply verdict to escrow" \
 
 show_field "status" "Consensus"
 
+# Cross-chain verdict bridging (if configured)
+BRIDGE_TX=$(echo "$LAST_RESPONSE" | jq -r '.bridge.txHash // empty' 2>/dev/null || true)
+if [ -n "$BRIDGE_TX" ]; then
+  divider
+  narrate "Verdict sent to cross-chain bridge!"
+  echo -e "  ${DIM}Bridge TX:${RESET} $BRIDGE_TX"
+  echo -e "  ${DIM}Path:${RESET} GenLayer → Relay → zkSync Hub → LayerZero V2 → Base Sepolia"
+
+  narrate "Querying cross-chain verdict status on Base Sepolia..."
+  sleep 3
+  api GET "/api/cross-chain/$DISPUTE_ID?milestone=0" "Cross-chain verdict check" || true
+  BRIDGED=$(echo "$LAST_RESPONSE" | jq -r '.base.bridged // false' 2>/dev/null || true)
+  if [ "$BRIDGED" = "true" ]; then
+    success "Verdict confirmed on Base Sepolia!"
+    echo "$LAST_RESPONSE" | jq '{base_verdict: .base.verdict.verdict, bridged: .base.bridged, registry: .base.registryAddress, explorer: .base.explorerUrl}' 2>/dev/null | sed 's/^/  /'
+  else
+    waiting "Verdict pending on Base (relay will deliver via LayerZero V2)"
+    echo "$LAST_RESPONSE" | jq '{enabled: .enabled, bridged: .base.bridged, path: .bridge.path}' 2>/dev/null | sed 's/^/  /'
+  fi
+fi
+
 divider
 narrate "Checking final dispute state..."
 
@@ -372,6 +393,9 @@ SECS=$(( TOTAL_ELAPSED % 60 ))
 echo -e ""
 echo -e "  ${GREEN}✓${RESET} Happy path:   Agreement created → SLA monitored → Verified → Paid"
 echo -e "  ${GREEN}✓${RESET} Dispute path: Agreement created → SLA failed → Disputed → IC resolved"
+if [ -n "${BRIDGE_TX:-}" ]; then
+echo -e "  ${GREEN}✓${RESET} Cross-chain:  Verdict bridged GenLayer → zkSync → LayerZero V2 → Base"
+fi
 echo -e ""
 echo -e "  ${DIM}Total time:${RESET} ${MINS}m ${SECS}s"
 echo -e "  ${DIM}Agreements:${RESET} $HAPPY_ID, $DISPUTE_ID"

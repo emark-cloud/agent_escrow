@@ -17,12 +17,19 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `frontend/lib/server/decisionEngine.ts` — Agent decision engine (create listing, claim listing, or wait)
 - `tests/direct/` — 44 direct mode contract tests (pytest + genlayer-test)
 - `demo.sh` — Narrated end-to-end demo script (happy path + dispute)
-- `demo-agents.js` — Two-agent autonomy demo (heartbeat/portfolio pattern, random pass/fail scenario, full IC court flow)
 - `marketplace-agents.js` — Five-agent autonomous marketplace demo (agents create listings, claim deals, run SLA checks)
 - `.claude/commands/agent-demo.md` — Claude Code slash command (`/agent-demo`) for AI agent demo
 - `SKILL.md` — Agent onboarding doc with curl examples for every endpoint
 - `HEARTBEAT.md` — Agent periodic monitoring routine (portfolio-driven action loop)
 - `GUIDELINES.md` — GenLayer development patterns reference
+- `contracts/solidity/` — Solidity bridge contracts (BridgeSender, BridgeReceiver, BridgeForwarder, VerdictRegistry)
+- `contracts/bridge/` — GenLayer bridge contracts (BridgeSender.py, BridgeReceiver.py)
+- `relay/` — Node.js relay service (GenLayer ↔ zkSync ↔ Base Sepolia via LayerZero V2)
+- `deploy/` — Deployment scripts for bridge contracts across 3 chains
+- `frontend/lib/server/base-client.ts` — viem client for Base Sepolia reads (verdict verification)
+- `frontend/app/api/cross-chain/` — Cross-chain verdict status API
+- `frontend/app/agreements/[id]/CrossChainStatus.tsx` — Cross-chain verdict UI component
+- `hardhat.config.ts` — Hardhat v3 + zksolc config for Solidity compilation
 
 ## Contract
 
@@ -68,6 +75,46 @@ Deployed from frontend or via API at runtime. Resolves disputes via AI jury cons
 
 **Address comparison:** Always use `.as_hex.lower()` for address comparisons in contracts. Direct `==` on Address objects can fail on Bradbury due to checksum differences.
 
+## Cross-Chain Bridge (LayerZero V2)
+
+AI jury verdicts bridge from GenLayer to Base Sepolia via LayerZero V2, providing verifiable on-chain proof of dispute outcomes.
+
+### Architecture
+```
+GenLayer Bradbury → Relay Service → zkSync Era Sepolia (BridgeForwarder) → LayerZero V2 → Base Sepolia (BridgeReceiver → VerdictRegistry)
+```
+
+### Deployed Contracts
+
+| Chain | Contract | Address |
+|-------|----------|---------|
+| GenLayer Bradbury | BridgeSender.py | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
+| GenLayer Bradbury | BridgeReceiver.py | `0x47e4FcAb492C3Ad56196f972A993E113535542CF` |
+| zkSync Era Sepolia | BridgeReceiver | `0x2c51596a49e6e8973b294adaf49dca651f38574b` |
+| zkSync Era Sepolia | BridgeForwarder | `0xed7c0744fb8543de9650db42fd7dc2ccc015e581` |
+| Base Sepolia | BridgeSender | `0x2c51596a49E6E8973b294adaf49DcA651f38574b` |
+| Base Sepolia | BridgeReceiver | `0xed7C0744FB8543De9650DB42fd7Dc2CcC015E581` |
+| Base Sepolia | VerdictRegistry | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |
+
+### Bridge Flow
+1. When `apply_verdict` is called on the court API, the verdict is also sent to GenLayer BridgeSender.py
+2. Relay service polls BridgeSender for new messages, forwards to zkSync BridgeForwarder
+3. BridgeForwarder sends cross-chain message via LayerZero V2 to Base BridgeReceiver
+4. BridgeReceiver dispatches to VerdictRegistry, which stores the verdict on-chain
+5. Frontend `CrossChainStatus` component fetches from `/api/cross-chain/:id` and shows bridge status
+
+### Configuration
+Bridge is enabled when both `BASE_REGISTRY_ADDRESS` and `GL_BRIDGE_SENDER` env vars are set in `frontend/.env.local`. The relay service uses `relay/.env` for its config.
+
+### Compilation
+- Base Sepolia contracts: compiled with standard `solc` via Hardhat v3 (`npx hardhat compile`)
+- zkSync Era contracts: compiled with `zksolc` + `solc-zksync` (zkSync's LLVM-based compiler). Standard solc bytecode does NOT work on zkSync Era.
+
+### LayerZero V2 Details
+- LayerZero Endpoint (both chains): `0x6EDCE65403992e310A62460808c4b910D972f10f`
+- Base Sepolia EID: `40245`
+- zkSync Era Sepolia EID: `40305`
+
 ## Agent Integration
 
 ### REST API (`frontend/app/api/`)
@@ -93,6 +140,7 @@ Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-k
 - `POST /api/agreements/:id/refund` — Refund failed milestone
 - `POST /api/agreements/:id/cancel` — Cancel agreement
 - `POST /api/agreements/:id/court` — Internet Court actions (`action`: deploy, accept, initiate, submit_evidence, resolve, apply_verdict, status)
+- `GET /api/cross-chain/:id?milestone=N` — Cross-chain verdict status (GenLayer + Base Sepolia)
 
 ### Consensus Result & Execution Errors
 With `?wait=true`, all write endpoints return a `ConsensusResult`. On GenLayer, a transaction can be ACCEPTED by consensus but the contract execution can still fail (validators agreed on the error). The API now detects this:
@@ -136,7 +184,7 @@ npm run dev
 ```
 
 ### Key Frontend Files
-- `lib/config.ts` — Chain config, contract addresses, status labels, separate color maps for agreement vs milestone status
+- `lib/config.ts` — Chain config, contract addresses, status labels, color maps, `BASE_CONFIG` + `BRIDGE_CONFIG` for cross-chain
 - `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking)
 - `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`), wallet resolution (env + agents.json)
 - `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking, execution error detection, IC deployment/interaction
@@ -153,6 +201,8 @@ npm run dev
 - `app/dashboard/page.tsx` — On-chain analytics dashboard (stats, milestone breakdown, SLA performance)
 - `app/agents/page.tsx` — Agent wallet management UI
 - `app/agreements/[id]/ResolvePanel.tsx` — Internet Court dispute resolution UI
+- `app/agreements/[id]/CrossChainStatus.tsx` — Cross-chain verdict bridge status display
+- `lib/server/base-client.ts` — viem client for Base Sepolia (verdict reads, cross-chain stats)
 
 ## Testing
 
@@ -176,8 +226,16 @@ pytest tests/direct/ -v
 - View methods return actual dataclass objects (attribute access: `ag.status`), not dicts
 
 ### Demo Scripts
-- `./demo.sh` — Narrated curl-based demo (happy path + dispute, colored output, ~10min)
-- `node demo-agents.js` — Two autonomous agents using portfolio heartbeat pattern
+- `./demo.sh` — Narrated curl-based demo (happy path + dispute + cross-chain verdict bridging, colored output, ~10min)
+- `node marketplace-agents.js` — Five autonomous agents using portfolio heartbeat pattern
+
+### Relay Service
+```bash
+cd relay
+cp .env.example .env  # Fill in contract addresses and private key
+npx tsx src/index.ts
+```
+Polls GenLayer BridgeSender and zkSync BridgeReceiver on cron intervals, forwarding messages in both directions.
 
 ### Claude Code Slash Command
 `/agent-demo` — Claude acts as an AI agent, creating and completing a deal via the REST API.

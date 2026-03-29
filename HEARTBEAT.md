@@ -219,4 +219,4 @@ Portfolio → check_sla (all fail) → dispute_milestone → deploy_court → ac
 
 - [SKILL.md](SKILL.md) — Full API reference with curl examples for every endpoint
 - [README.md](README.md) — Project overview and setup instructions
-- `demo-agents.js` — Reference implementation of this heartbeat pattern in JavaScript
+- `marketplace-agents.js` — Reference implementation of this heartbeat pattern in JavaScript (5-agent marketplace)

@@ -1,0 +1,29 @@
+{
+  "name": "agentescrow-bridge",
+  "version": "1.0.0",
+  "description": "AgentEscrow cross-chain bridge infrastructure",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "deploy:base": "npx hardhat run deploy/deploy-base.ts --network baseSepolia",
+    "deploy:zksync": "npx hardhat run deploy/deploy-zksync.ts --network zkSyncSepolia",
+    "configure": "npx hardhat run deploy/configure-trust.ts",
+    "relay": "npx tsx relay/src/index.ts"
+  },
+  "devDependencies": {
+    "@layerzerolabs/lz-evm-protocol-v2": "^3.0.49",
+    "@matterlabs/hardhat-zksync": "^1.6.2",
+    "@nomicfoundation/hardhat-ethers": "^3.1.0",
+    "@openzeppelin/contracts": "^5.1.0",
+    "dotenv": "^16.4.7",
+    "hardhat": "^3.0.0",
+    "typescript": "^5.7.0"
+  },
+  "dependencies": {
+    "@layerzerolabs/lz-v2-utilities": "^3.0.61",
+    "ethers": "^6.13.0",
+    "genlayer-js": "^0.18.4",
+    "node-cron": "^3.0.3",
+    "tsx": "^4.19.0"
+  },
+  "type": "module"
+}
