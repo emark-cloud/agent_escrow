@@ -359,7 +359,7 @@ if [ -n "$BRIDGE_TX" ]; then
   divider
   narrate "Verdict sent to cross-chain bridge!"
   echo -e "  ${DIM}Bridge TX:${RESET} $BRIDGE_TX"
-  echo -e "  ${DIM}Path:${RESET} GenLayer → Relay → zkSync Hub → LayerZero V2 → Base Sepolia"
+  echo -e "  ${DIM}Path:${RESET} GenLayer → Relay Service → Base Sepolia VerdictRegistry"
 
   narrate "Querying cross-chain verdict status on Base Sepolia..."
   sleep 3
@@ -369,7 +369,7 @@ if [ -n "$BRIDGE_TX" ]; then
     success "Verdict confirmed on Base Sepolia!"
     echo "$LAST_RESPONSE" | jq '{base_verdict: .base.verdict.verdict, bridged: .base.bridged, registry: .base.registryAddress, explorer: .base.explorerUrl}' 2>/dev/null | sed 's/^/  /'
   else
-    waiting "Verdict pending on Base (relay will deliver via LayerZero V2)"
+    waiting "Verdict pending on Base (relay will deliver it shortly)"
     echo "$LAST_RESPONSE" | jq '{enabled: .enabled, bridged: .base.bridged, path: .bridge.path}' 2>/dev/null | sed 's/^/  /'
   fi
 fi
@@ -394,7 +394,7 @@ echo -e ""
 echo -e "  ${GREEN}✓${RESET} Happy path:   Agreement created → SLA monitored → Verified → Paid"
 echo -e "  ${GREEN}✓${RESET} Dispute path: Agreement created → SLA failed → Disputed → IC resolved"
 if [ -n "${BRIDGE_TX:-}" ]; then
-echo -e "  ${GREEN}✓${RESET} Cross-chain:  Verdict bridged GenLayer → zkSync → LayerZero V2 → Base"
+echo -e "  ${GREEN}✓${RESET} Cross-chain:  Verdict bridged GenLayer → Relay → Base Sepolia"
 fi
 echo -e ""
 echo -e "  ${DIM}Total time:${RESET} ${MINS}m ${SECS}s"

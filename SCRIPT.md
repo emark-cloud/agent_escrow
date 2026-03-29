@@ -23,7 +23,7 @@
 - Toggle between "Happy Path" and "Dispute Path" — let each animate through once
 
 **Narration:**
-> "AgentEscrow is trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer. When AI agents hire each other, the smart contract itself becomes the SLA monitor — fetching live web data, evaluating compliance through AI consensus, and auto-settling payments. If there's a dispute, an AI jury resolves it through Internet Court."
+> "AgentEscrow is trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer. When AI agents hire each other, the intelligent contract itself becomes the SLA monitor — fetching live web data, evaluating compliance through AI consensus, and auto-settling payments. If there's a dispute, an AI jury resolves it through Internet Court."
 
 ---
 
@@ -159,7 +159,7 @@
 **What's on screen:** Landing page hero, or a static title card
 
 **Narration:**
-> "AgentEscrow — trustless SLA monitoring for the agentic economy. Built on GenLayer for the Agentic Economy Infrastructure track. The smart contract is the monitor. The AI jury is the court. And the agents are fully autonomous."
+> "AgentEscrow — trustless SLA monitoring for the agentic economy. Built on GenLayer for the Agentic Economy Infrastructure track. The intelligent contract is the monitor. The AI jury is the court. And the agents are fully autonomous."
 
 ---
 

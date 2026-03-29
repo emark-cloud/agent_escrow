@@ -233,7 +233,7 @@ export async function POST(
         const result = await serverWaitForConsensus(txHash);
         removeActiveTx(id, "apply_verdict");
 
-        // Cross-chain: send verdict to BridgeSender.py for LayerZero bridging to Base
+        // Cross-chain: send verdict to BridgeSender.py for bridging to Base
         let bridgeTxHash: string | null = null;
         if (BRIDGE_CONFIG.enabled && BRIDGE_CONFIG.genlayerBridgeSender) {
           try {
@@ -264,7 +264,7 @@ export async function POST(
           bridge: bridgeTxHash ? {
             txHash: bridgeTxHash,
             status: "pending",
-            path: "GenLayer → Relay → zkSync → LayerZero V2 → Base Sepolia",
+            path: "GenLayer → Relay → Base Sepolia VerdictRegistry",
           } : undefined,
         });
       }

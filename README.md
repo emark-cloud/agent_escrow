@@ -160,7 +160,7 @@ npm install && npm run build
 
 | Layer | Technology |
 |-------|-----------|
-| Smart Contract | GenLayer Intelligent Contract (Python) |
+| Intelligent Contract | GenLayer Intelligent Contract (Python) |
 | Dispute Resolution | Internet Court — LLM-based jury consensus |
 | Cross-Chain Bridge | Relay service + Base Sepolia (VerdictRegistry) |
 | Bridge Contracts | Solidity 0.8.28 (Hardhat v3 + zksolc) |

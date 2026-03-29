@@ -17,7 +17,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "AgentEscrow — Trustless SLA Monitoring for AI Agents",
   description:
-    "Smart contracts that monitor SLAs, auto-release payments, and escalate disputes via Internet Court. Built on GenLayer.",
+    "Intelligent contracts that monitor SLAs, auto-release payments, and escalate disputes via Internet Court. Built on GenLayer.",
 };
 
 export default function RootLayout({

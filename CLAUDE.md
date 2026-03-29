@@ -24,7 +24,7 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `GUIDELINES.md` — GenLayer development patterns reference
 - `contracts/solidity/` — Solidity bridge contracts (BridgeSender, BridgeReceiver, BridgeForwarder, VerdictRegistry)
 - `contracts/bridge/` — GenLayer bridge contracts (BridgeSender.py, BridgeReceiver.py)
-- `relay/` — Node.js relay service (GenLayer ↔ zkSync ↔ Base Sepolia via LayerZero V2)
+- `relay/` — Node.js relay service (GenLayer → Base Sepolia direct relay)
 - `deploy/` — Deployment scripts for bridge contracts across 3 chains
 - `frontend/lib/server/base-client.ts` — viem client for Base Sepolia reads (verdict verification)
 - `frontend/app/api/cross-chain/` — Cross-chain verdict status API
@@ -75,9 +75,9 @@ Deployed from frontend or via API at runtime. Resolves disputes via AI jury cons
 
 **Address comparison:** Always use `.as_hex.lower()` for address comparisons in contracts. Direct `==` on Address objects can fail on Bradbury due to checksum differences.
 
-## Cross-Chain Bridge (LayerZero V2)
+## Cross-Chain Bridge (Direct Relay)
 
-AI jury verdicts bridge from GenLayer to Base Sepolia via LayerZero V2, providing verifiable on-chain proof of dispute outcomes.
+AI jury verdicts bridge from GenLayer to Base Sepolia via a relay service, providing verifiable on-chain proof of dispute outcomes.
 
 ### Architecture
 ```

@@ -39,8 +39,7 @@ interface Props {
 
 const CHAIN_HOPS = [
   { name: "GenLayer", color: "text-violet-400", icon: "GL" },
-  { name: "zkSync Hub", color: "text-blue-400", icon: "ZK" },
-  { name: "LayerZero V2", color: "text-yellow-400", icon: "LZ" },
+  { name: "Relay", color: "text-blue-400", icon: "R" },
   { name: "Base Sepolia", color: "text-sky-400", icon: "B" },
 ];
 
@@ -162,7 +161,7 @@ export function CrossChainStatus({ agreementId, milestoneIndex }: Props) {
       ) : (
         <div className="text-xs text-white/30">
           Verdict not yet bridged to Base Sepolia. It will appear here after the
-          relay service forwards it via LayerZero V2.
+          relay service forwards it.
         </div>
       )}
 

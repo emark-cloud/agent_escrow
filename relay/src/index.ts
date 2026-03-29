@@ -1,11 +1,10 @@
 /**
  * AgentEscrow Bridge Relay Service
  *
- * Runs two relay loops:
- * 1. GenLayer → EVM: Polls GenLayer BridgeSender for verdict messages,
- *    relays via zkSync BridgeForwarder + LayerZero to Base
- * 2. EVM → GenLayer: Polls zkSync BridgeReceiver for pending messages,
- *    relays to GenLayer BridgeReceiver IC
+ * Runs relay loops:
+ * 1. GenLayer → Base: Polls GenLayer BridgeSender for verdict messages,
+ *    decodes bridge format, ABI-encodes, and calls VerdictRegistry on Base Sepolia
+ * 2. EVM → GenLayer: (disabled) Reverse direction relay
  */
 
 import cron from "node-cron";
