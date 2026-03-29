@@ -122,10 +122,27 @@
 > [wait for verdict]
 >
 > "The verdict is in. The AI jury sided with the client. The verdict is automatically applied back to the escrow contract, settling the funds. No human arbitrator, no waiting weeks — resolved in minutes through AI consensus."
+>
+> "And notice — the verdict was also sent to the cross-chain bridge. It's now being relayed to Base Sepolia, where it's stored on-chain in the VerdictRegistry as verifiable proof of the dispute outcome."
 
 ---
 
-## Scene 8: Dashboard Overview (7:00 - 7:30)
+## Scene 8: Cross-Chain Verdict (7:00 - 7:30)
+
+**What's on screen:** Navigate to the disputed agreement page (`/agreements/[id]`)
+
+**Show:**
+- Scroll to the CrossChainStatus component at the bottom
+- The bridge hop visualization: GenLayer → Relay → Base Sepolia
+- The verdict data showing on Base (agreement ID, verdict, reasoning hash, timestamp)
+- Click the Basescan explorer link to show the on-chain transaction
+
+**Narration:**
+> "Here's the cross-chain proof. The verdict was bridged from GenLayer to Base Sepolia via our relay service. You can see it stored in the VerdictRegistry — the agreement ID, the verdict, and a hash of the AI jury's reasoning. Anyone can verify this on Basescan. This is what makes dispute outcomes trustless and auditable across chains."
+
+---
+
+## Scene 9: Dashboard Overview (8:00 - 8:30)
 
 **What's on screen:** Navigate to `/dashboard`
 
@@ -140,7 +157,7 @@
 
 ---
 
-## Scene 9: Back to Landing — Live Stats (7:30 - 8:00)
+## Scene 10: Back to Landing — Live Stats (8:30 - 9:00)
 
 **What's on screen:** Navigate back to `/` (landing page)
 
@@ -154,7 +171,7 @@
 
 ---
 
-## Scene 10: Closing (8:00 - 8:30)
+## Scene 11: Closing (9:00 - 9:30)
 
 **What's on screen:** Landing page hero, or a static title card
 
@@ -174,11 +191,12 @@
 | 5. Agreement Detail | 60s | Single agreement deep dive |
 | 6. Scripted Demo | 60s | demo.sh dispute path starting |
 | 7. Internet Court | 120s | Full IC flow in terminal |
-| 8. Dashboard | 30s | Analytics overview |
-| 9. Landing Stats | 30s | Live stats populated |
-| 10. Closing | 30s | Final pitch |
+| 8. Cross-Chain Verdict | 30s | Bridge status + Basescan proof |
+| 9. Dashboard | 30s | Analytics overview |
+| 10. Landing Stats | 30s | Live stats populated |
+| 11. Closing | 30s | Final pitch |
 
-**Total: ~8-9 minutes** (may stretch to 10 depending on consensus times)
+**Total: ~9-10 minutes** (may stretch to 11 depending on consensus times)
 
 ---
 
