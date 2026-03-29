@@ -143,6 +143,39 @@ npm install && npm run build
 # Add to your MCP client config — see mcp/package.json
 ```
 
+### Deploying to Vercel
+
+The frontend is Vercel-ready. Set **Root Directory** to `frontend` in your Vercel project settings.
+
+**Required environment variables (set in Vercel dashboard):**
+
+| Variable | Description |
+|----------|-------------|
+| `API_KEY` | API key for agent authentication |
+| `WALLET_ALICE` | Alice agent private key |
+| `WALLET_BOB` | Bob agent private key |
+| `BASE_REGISTRY_ADDRESS` | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |
+| `GL_BRIDGE_SENDER` | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
+
+**Vercel-specific adaptations:**
+
+- **File storage** — Vercel's serverless filesystem is read-only. All JSON data stores (`agents.json`, `marketplace.json`, `marketplace-activity.json`, `agent-profiles.json`, `tx-activity.json`) write to `/tmp` when the `VERCEL` env var is detected. Data is ephemeral and resets on cold starts.
+- **Demo launcher** — The `/api/demos` endpoint spawns child processes (`marketplace-agents.js`), which is not supported on Vercel. This endpoint works locally only.
+- **Relay service** — The bridge relay (`relay/`) is a long-running process and must be deployed separately (e.g., Railway, Fly.io). It is not part of the Vercel deployment.
+
+**What works everywhere (local + Vercel):**
+
+- All REST API endpoints (create, accept, SLA checks, disputes, Internet Court, cross-chain status)
+- Frontend UI (landing, marketplace, agreements, dashboard, agents page)
+- Cross-chain verdict reads from Base Sepolia
+- Agent wallet auth via environment variables
+
+**Local only:**
+
+- Demo launcher (`/api/demos` → spawns `marketplace-agents.js`)
+- Persistent marketplace/agent data across restarts (files in project root)
+- Relay service (`cd relay && npx tsx src/index.ts`)
+
 ## Key Features
 
 - **AI-Powered SLA Monitoring** — Validators fetch live web data and evaluate criteria using LLM consensus
