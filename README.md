@@ -10,7 +10,7 @@ Client Agent creates deal → Provider Agent accepts → AI validators monitor S
                   ↓ (if SLA fails)
         Dispute filed → Internet Court (AI jury) → Verdict → Escrow resolved
                                                       ↓
-                              Verdict bridged via LayerZero V2 → Base Sepolia (verifiable proof)
+                              Verdict bridged → Base Sepolia (verifiable on-chain proof)
 ```
 
 ## Quick Demo
@@ -38,7 +38,7 @@ All scripts use the REST API with `?wait=true` for sequential consensus. No depe
 
 - **AI-native enforcement** — SLA checks aren't static threshold monitors. GenLayer validators fetch live URLs and use LLM consensus to evaluate natural-language criteria ("API returns valid JSON with user data"). This means agents can write SLA criteria in plain English.
 - **Trustless dispute resolution** — Internet Court deploys a per-dispute contract where an AI jury evaluates evidence from both parties. No oracle, no DAO vote, no human arbitrator.
-- **Cross-chain verdict proofs** — AI jury verdicts bridge trustlessly from GenLayer to Base Sepolia via LayerZero V2 and zkSync Era hub, providing verifiable on-chain proof of dispute outcomes on a widely-used L2.
+- **Cross-chain verdict proofs** — AI jury verdicts bridge from GenLayer to Base Sepolia via a relay service, providing verifiable on-chain proof of dispute outcomes on a widely-used L2.
 - **Agent-first architecture** — REST API with server-side signing means any agent (MCP-compatible or not) can create deals, monitor SLAs, and resolve disputes with simple HTTP calls. The heartbeat/portfolio pattern lets agents autonomously discover and act on pending work, including driving the full Internet Court dispute flow.
 
 ## Architecture
@@ -79,14 +79,8 @@ All scripts use the REST API with `?wait=true` for sequential consensus. No depe
                   │ Relay Service
                   ▼
 ┌──────────────────────────────────────────┐
-│     zkSync Era Sepolia (Hub)             │
-│  BridgeForwarder → LayerZero V2 message  │
-└─────────────────┬────────────────────────┘
-                  │ LayerZero V2
-                  ▼
-┌──────────────────────────────────────────┐
 │     Base Sepolia                         │
-│  BridgeReceiver → VerdictRegistry        │
+│  VerdictRegistry                         │
 │  (verifiable on-chain verdict proofs)    │
 └──────────────────────────────────────────┘
 ```
@@ -154,7 +148,7 @@ npm install && npm run build
 - **AI-Powered SLA Monitoring** — Validators fetch live web data and evaluate criteria using LLM consensus
 - **Milestone-Based Escrow** — Multiple milestones per agreement, each independently monitored and paid
 - **Internet Court** — Per-dispute AI jury with evidence from both parties
-- **Cross-Chain Verdict Bridge** — AI jury verdicts bridged to Base Sepolia via LayerZero V2 through zkSync Era hub
+- **Cross-Chain Verdict Bridge** — AI jury verdicts bridged to Base Sepolia via relay service for verifiable on-chain proof
 - **Multi-Milestone Disputes** — Multiple milestones disputed and resolved independently
 - **Agent-First Design** — REST API, MCP server, and skill file for autonomous AI agents
 - **Portfolio/Heartbeat** — Single endpoint returning all actionable items for an address
@@ -168,7 +162,7 @@ npm install && npm run build
 |-------|-----------|
 | Smart Contract | GenLayer Intelligent Contract (Python) |
 | Dispute Resolution | Internet Court — LLM-based jury consensus |
-| Cross-Chain Bridge | LayerZero V2 + zkSync Era Sepolia (hub) + Base Sepolia |
+| Cross-Chain Bridge | Relay service + Base Sepolia (VerdictRegistry) |
 | Bridge Contracts | Solidity 0.8.28 (Hardhat v3 + zksolc) |
 | Relay Service | Node.js + genlayer-js + ethers.js |
 | Frontend | Next.js 16, TypeScript, TailwindCSS |
