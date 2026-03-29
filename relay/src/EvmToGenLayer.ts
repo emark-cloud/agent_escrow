@@ -13,9 +13,8 @@ import {
   getBridgeReceiverIcAddress,
   getZkSyncBridgeReceiverAddress,
   getZkSyncRpcUrl,
-  getGenlayerRpcUrl,
   getPrivateKey,
-} from "../config.js";
+} from "./config.js";
 
 interface GenLayerBoundMessage {
   messageId: string;
@@ -40,7 +39,11 @@ export class EvmToGenLayerRelay {
   private processedMessageIds: Set<string>;
 
   constructor() {
-    this.zkSyncProvider = new ethers.JsonRpcProvider(getZkSyncRpcUrl());
+    // zkSync RPC is slow (~8s responses) — use static network to skip auto-detect
+    const fetchReq = new ethers.FetchRequest(getZkSyncRpcUrl());
+    fetchReq.timeout = 120000;
+    const zkSyncNetwork = new ethers.Network("zksync-sepolia", 300);
+    this.zkSyncProvider = new ethers.JsonRpcProvider(fetchReq, zkSyncNetwork, { staticNetwork: zkSyncNetwork });
     this.zkSyncWallet = new ethers.Wallet(getPrivateKey(), this.zkSyncProvider);
 
     this.zkSyncBridgeReceiver = new ethers.Contract(
@@ -49,16 +52,11 @@ export class EvmToGenLayerRelay {
       this.zkSyncWallet
     );
 
-    // Initialize GenLayer client
+    // Initialize GenLayer client (use default testnetBradbury RPC — gen_call is only on rpc-bradbury.genlayer.com)
     const privateKey = getPrivateKey();
-    const account = createAccount(`0x${privateKey.replace(/^0x/, "")}`);
+    const account = createAccount(`0x${privateKey.replace(/^0x/, "")}` as `0x${string}`);
     this.genLayerClient = createClient({
-      chain: {
-        ...testnetBradbury,
-        rpcUrls: {
-          default: { http: [getGenlayerRpcUrl()] },
-        },
-      },
+      chain: testnetBradbury,
       account,
     });
 
@@ -112,7 +110,6 @@ export class EvmToGenLayerRelay {
         address: getBridgeReceiverIcAddress() as Address,
         functionName: "is_message_processed",
         args: [message.messageId],
-        stateStatus: "accepted",
       });
 
       if (isProcessed) {

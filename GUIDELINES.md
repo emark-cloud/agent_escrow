@@ -922,8 +922,8 @@ The bridge is **additive** — escrow settlement happens on GenLayer regardless.
 |-------|----------|---------|
 | GenLayer Bradbury | BridgeSender.py | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
 | GenLayer Bradbury | BridgeReceiver.py | `0x47e4FcAb492C3Ad56196f972A993E113535542CF` |
-| zkSync Era Sepolia | BridgeReceiver.sol | `0x2c51596a49e6e8973b294adaf49dca651f38574b` |
-| zkSync Era Sepolia | BridgeForwarder.sol | `0xed7c0744fb8543de9650db42fd7dc2ccc015e581` |
+| zkSync Era Sepolia | BridgeReceiver.sol | `0x35df92279eC10bcFF1Ad69ee2e7FB72330ca71B6` |
+| zkSync Era Sepolia | BridgeForwarder.sol | `0x59D20faD010702c0248719392421D31C09740212` |
 | Base Sepolia | BridgeSender.sol | `0x2c51596a49E6E8973b294adaf49DcA651f38574b` |
 | Base Sepolia | BridgeReceiver.sol | `0xed7C0744FB8543De9650DB42fd7Dc2CcC015E581` |
 | Base Sepolia | VerdictRegistry.sol | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |

@@ -1,0 +1,21 @@
+{
+  "name": "agentescrow-relay",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts"
+  },
+  "dependencies": {
+    "@layerzerolabs/lz-v2-utilities": "^3.0.0",
+    "dotenv": "^16.4.7",
+    "ethers": "^6.13.5",
+    "genlayer-js": "^0.22.1",
+    "node-cron": "^3.0.3",
+    "tsx": "^4.19.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.14",
+    "@types/node-cron": "^3.0.11"
+  }
+}
