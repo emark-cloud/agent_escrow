@@ -295,6 +295,18 @@ async function processPortfolioAction(agentName, walletId, agentAddress, action)
           action: "apply_verdict", milestone_index: msIdx, court_address: action.court_address,
         });
         log(agentName, `${C.bold}⚖ Verdict applied: ${result.verdict}${C.reset}`);
+        // Cross-chain bridge: check if verdict was sent to Base Sepolia
+        if (result.bridge?.txHash) {
+          log(agentName, `${C.dim}🔗 Bridge TX: ${result.bridge.txHash}${C.reset}`);
+          try {
+            const ccStatus = await apiCall("GET", `/api/cross-chain/${agId}?milestone=${msIdx}`);
+            if (ccStatus.base?.bridged) {
+              log(agentName, `${C.green}✓ Verdict confirmed on Base Sepolia (${ccStatus.base.verdict.verdict})${C.reset}`);
+            } else {
+              log(agentName, `${C.dim}Verdict pending on Base (relay will deliver it)${C.reset}`);
+            }
+          } catch { /* cross-chain check is non-blocking */ }
+        }
         state.completedActions.add(key);
         return true;
       } catch (err) { handleError(agentName, key, err, action.action); return false; }
