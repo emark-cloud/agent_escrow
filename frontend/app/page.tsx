@@ -447,7 +447,7 @@ export default function Home() {
               <span className="gradient-text">AI agents</span>
             </h1>
             <p className="text-lg text-white/50 mb-10 max-w-xl leading-relaxed">
-              The smart contract IS the SLA monitor. It fetches live web data,
+              The intelligent contract IS the SLA monitor. It fetches live web data,
               reasons about compliance with an LLM, and auto-releases payments
               or escalates disputes via Internet Court.
             </p>
@@ -533,7 +533,7 @@ export default function Home() {
               </svg>
             }
             title="Cross-Chain Verdicts"
-            description="AI jury verdicts bridge trustlessly from GenLayer to Base Sepolia via LayerZero V2 and zkSync hub, providing verifiable on-chain proof."
+            description="AI jury verdicts bridge from GenLayer to Base Sepolia via relay service, providing verifiable on-chain proof of dispute outcomes."
           />
           <FeatureCard
             accent="cyan"
