@@ -904,17 +904,21 @@ else:
 
 ---
 
-## Part 5: Cross-Chain Bridge (LayerZero V2)
+## Part 5: Cross-Chain Bridge (Direct Relay)
 
-AgentEscrow bridges AI jury verdicts from GenLayer to Base Sepolia via LayerZero V2, using zkSync Era Sepolia as a hub. This provides verifiable on-chain proof of dispute outcomes on a widely-used L2.
+AgentEscrow bridges AI jury verdicts from GenLayer to Base Sepolia via a direct relay service. This provides verifiable on-chain proof of dispute outcomes on a widely-used L2.
 
 ### 5.1 Architecture
 
 ```
-GenLayer Bradbury → Relay Service → zkSync Era Sepolia (BridgeForwarder) → LayerZero V2 → Base Sepolia (BridgeReceiver → VerdictRegistry)
+GenLayer Bradbury → Relay Service → Base Sepolia (VerdictRegistry)
 ```
 
+The relay reads verdict messages from GenLayer's BridgeSender, decodes the bridge-format wrapper (extracts JSON inner data), ABI-encodes it as `(string, uint256, string, bytes32)`, and calls `VerdictRegistry.processBridgeMessage` on Base Sepolia.
+
 The bridge is **additive** — escrow settlement happens on GenLayer regardless. Base provides a transparency/verification layer.
+
+> **Note:** zkSync Era Sepolia contracts are deployed but the zkSync→Base LayerZero hop is inactive — zkSync Era Sepolia only has LayerZero V1 (EID 10248), while Base Sepolia uses V2 (EID 40245). The direct relay achieves the same trust model for the hackathon.
 
 ### 5.2 Deployed Contracts
 
@@ -923,25 +927,15 @@ The bridge is **additive** — escrow settlement happens on GenLayer regardless.
 | GenLayer Bradbury | BridgeSender.py | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
 | GenLayer Bradbury | BridgeReceiver.py | `0x47e4FcAb492C3Ad56196f972A993E113535542CF` |
 | zkSync Era Sepolia | BridgeReceiver.sol | `0x35df92279eC10bcFF1Ad69ee2e7FB72330ca71B6` |
-| zkSync Era Sepolia | BridgeForwarder.sol | `0x59D20faD010702c0248719392421D31C09740212` |
-| Base Sepolia | BridgeSender.sol | `0x2c51596a49E6E8973b294adaf49DcA651f38574b` |
-| Base Sepolia | BridgeReceiver.sol | `0xed7C0744FB8543De9650DB42fd7Dc2CcC015E581` |
+| zkSync Era Sepolia | BridgeForwarder.sol | `0x59D20faD10702c0248719392421D31C09740212` |
 | Base Sepolia | VerdictRegistry.sol | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |
 
-### 5.3 LayerZero V2 Configuration
+### 5.3 Relay Service
 
-- **LayerZero Endpoint (all chains):** `0x6EDCE65403992e310A62460808c4b910D972f10f`
-- **Base Sepolia EID:** 40245
-- **zkSync Era Sepolia EID:** 40305
+The relay (`relay/`) polls GenLayer `BridgeSender.py` for verdict messages and relays them directly to Base Sepolia VerdictRegistry. Key files:
 
-Trust relationships are bidirectional between Base and zkSync via `setDestinationBridgeAddresses`, `setTrustedForwarder`, and `setZkSyncBridgeReceiver`.
-
-### 5.4 Relay Service
-
-The relay (`relay/`) polls GenLayer `BridgeSender.py` for verdict messages and forwards them through the zkSync hub to Base. Key files:
-
-- `relay/src/genlayer-to-evm.ts` — Polls for unrelayed verdicts, calls zkSync `BridgeForwarder`
-- `relay/src/evm-to-genlayer.ts` — (stretch) Polls Base for dispute events
+- `relay/src/GenLayerToEvm.ts` — Polls for unrelayed verdicts, decodes bridge format, ABI-encodes, calls VerdictRegistry
+- `relay/src/EvmToGenLayer.ts` — (disabled) Reverse direction relay
 - `relay/src/index.ts` — Entry point, runs relay loops on cron schedule
 
 Start with: `cd relay && npx tsx src/index.ts`

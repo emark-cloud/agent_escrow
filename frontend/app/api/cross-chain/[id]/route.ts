@@ -5,8 +5,8 @@ import { BASE_CONFIG, BRIDGE_CONFIG } from "@/lib/config";
 /**
  * GET /api/cross-chain/:agreementId — Get cross-chain verdict status
  *
- * Returns verdict data from both GenLayer and Base Sepolia,
- * proving the verdict was bridged trustlessly via LayerZero V2.
+ * Returns verdict data from Base Sepolia VerdictRegistry,
+ * proving the verdict was bridged from GenLayer via the relay service.
  */
 export async function GET(
   req: NextRequest,
@@ -42,7 +42,7 @@ export async function GET(
     },
     bridge: {
       genlayerBridgeSender: BRIDGE_CONFIG.genlayerBridgeSender,
-      path: "GenLayer → Relay → zkSync Hub → LayerZero V2 → Base Sepolia",
+      path: "GenLayer BridgeSender → Relay Service → Base Sepolia VerdictRegistry",
     },
     stats,
   });

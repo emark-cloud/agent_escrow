@@ -3,16 +3,59 @@
  * Uses viem (already installed) for Base Sepolia reads.
  */
 
-import { createPublicClient, http, parseAbi } from "viem";
+import { createPublicClient, http } from "viem";
 import { baseSepolia } from "viem/chains";
 import { BASE_CONFIG } from "../config";
 
-const VERDICT_REGISTRY_ABI = parseAbi([
-  "function getVerdict(string agreementId, uint256 milestoneIndex) view returns (tuple(string agreementId, uint256 milestoneIndex, string verdict, bytes32 reasoningHash, uint256 timestamp, bool exists))",
-  "function hasVerdict(string agreementId, uint256 milestoneIndex) view returns (bool)",
-  "function getVerdictCount() view returns (uint256)",
-  "function getAgreementCount() view returns (uint256)",
-]);
+const VERDICT_REGISTRY_ABI = [
+  {
+    type: "function",
+    name: "getVerdict",
+    inputs: [
+      { name: "agreementId", type: "string" },
+      { name: "milestoneIndex", type: "uint256" },
+    ],
+    outputs: [
+      {
+        name: "",
+        type: "tuple",
+        components: [
+          { name: "agreementId", type: "string" },
+          { name: "milestoneIndex", type: "uint256" },
+          { name: "verdict", type: "string" },
+          { name: "reasoningHash", type: "bytes32" },
+          { name: "timestamp", type: "uint256" },
+          { name: "exists", type: "bool" },
+        ],
+      },
+    ],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "hasVerdict",
+    inputs: [
+      { name: "agreementId", type: "string" },
+      { name: "milestoneIndex", type: "uint256" },
+    ],
+    outputs: [{ name: "", type: "bool" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getVerdictCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+  {
+    type: "function",
+    name: "getAgreementCount",
+    inputs: [],
+    outputs: [{ name: "", type: "uint256" }],
+    stateMutability: "view",
+  },
+] as const;
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _client: any;

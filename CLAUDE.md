@@ -81,8 +81,12 @@ AI jury verdicts bridge from GenLayer to Base Sepolia via LayerZero V2, providin
 
 ### Architecture
 ```
-GenLayer Bradbury → Relay Service → zkSync Era Sepolia (BridgeForwarder) → LayerZero V2 → Base Sepolia (BridgeReceiver → VerdictRegistry)
+GenLayer Bradbury → Relay Service → Base Sepolia (VerdictRegistry)
 ```
+
+The relay reads verdict messages from GenLayer's BridgeSender contract, decodes the bridge-format wrapper (extracts JSON inner data), ABI-encodes it as `(string, uint256, string, bytes32)`, and calls `VerdictRegistry.processBridgeMessage` on Base Sepolia directly.
+
+> **Note:** zkSync Era Sepolia contracts are deployed but the zkSync→Base LayerZero hop is inactive — zkSync Era Sepolia only has LayerZero V1 (EID 10248), while Base Sepolia uses V2 (EID 40245). The direct relay achieves the same trust model for the hackathon.
 
 ### Deployed Contracts
 
@@ -92,16 +96,15 @@ GenLayer Bradbury → Relay Service → zkSync Era Sepolia (BridgeForwarder) →
 | GenLayer Bradbury | BridgeReceiver.py | `0x47e4FcAb492C3Ad56196f972A993E113535542CF` |
 | zkSync Era Sepolia | BridgeReceiver | `0x35df92279eC10bcFF1Ad69ee2e7FB72330ca71B6` |
 | zkSync Era Sepolia | BridgeForwarder | `0x59D20faD010702c0248719392421D31C09740212` |
-| Base Sepolia | BridgeSender | `0x2c51596a49E6E8973b294adaf49DcA651f38574b` |
-| Base Sepolia | BridgeReceiver | `0xed7C0744FB8543De9650DB42fd7Dc2CcC015E581` |
 | Base Sepolia | VerdictRegistry | `0x1c9aE798364AE47c2926992811d3406611BDDdc9` |
 
 ### Bridge Flow
-1. When `apply_verdict` is called on the court API, the verdict is also sent to GenLayer BridgeSender.py
-2. Relay service polls BridgeSender for new messages, forwards to zkSync BridgeForwarder
-3. BridgeForwarder sends cross-chain message via LayerZero V2 to Base BridgeReceiver
-4. BridgeReceiver dispatches to VerdictRegistry, which stores the verdict on-chain
-5. Frontend `CrossChainStatus` component fetches from `/api/cross-chain/:id` and shows bridge status
+1. `apply_verdict` on the court API sends the verdict to GenLayer BridgeSender.py
+2. Relay service polls BridgeSender for new messages via `get_message_hashes` / `get_message`
+3. Relay decodes bridge-format wrapper → extracts JSON inner data → ABI-encodes for VerdictRegistry
+4. Relay calls `VerdictRegistry.processBridgeMessage(sourceChainId, relayAddress, abiEncodedVerdict)` on Base Sepolia
+5. VerdictRegistry stores verdict on-chain, emits `VerdictRecorded` event
+6. Frontend `CrossChainStatus` component fetches from `/api/cross-chain/:id` and shows bridge status
 
 ### Configuration
 Bridge is enabled when both `BASE_REGISTRY_ADDRESS` and `GL_BRIDGE_SENDER` env vars are set in `frontend/.env.local`. The relay service uses `relay/.env` for its config.
@@ -109,11 +112,6 @@ Bridge is enabled when both `BASE_REGISTRY_ADDRESS` and `GL_BRIDGE_SENDER` env v
 ### Compilation
 - Base Sepolia contracts: compiled with standard `solc` via Hardhat v3 (`npx hardhat compile`)
 - zkSync Era contracts: compiled with `zksolc` + `solc-zksync` (zkSync's LLVM-based compiler). Standard solc bytecode does NOT work on zkSync Era.
-
-### LayerZero V2 Details
-- LayerZero Endpoint (both chains): `0x6EDCE65403992e310A62460808c4b910D972f10f`
-- Base Sepolia EID: `40245`
-- zkSync Era Sepolia EID: `40305`
 
 ## Agent Integration
 
