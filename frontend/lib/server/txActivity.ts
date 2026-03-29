@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dataPath } from "./dataDir";
 
-const TX_FILE = join(process.cwd(), "tx-activity.json");
+const TX_FILE = dataPath("tx-activity.json");
 
 export interface ActiveTx {
   agreementId: string;

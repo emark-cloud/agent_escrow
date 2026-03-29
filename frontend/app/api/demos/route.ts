@@ -13,13 +13,15 @@ function isRunning(demo: { process: ChildProcess; exited: boolean }): boolean {
   return !demo.exited;
 }
 
-const DEMO_SCRIPTS: Record<string, { cmd: string; args: string[]; label: string }> = {
-  marketplace: {
-    cmd: "node",
-    args: [join(PROJECT_ROOT, "marketplace-agents.js"), "http://localhost:3000"],
-    label: "5-Agent Marketplace Demo",
-  },
-};
+function getDemoScripts(): Record<string, { cmd: string; args: string[]; label: string }> {
+  return {
+    marketplace: {
+      cmd: "node",
+      args: [[PROJECT_ROOT, "marketplace-agents.js"].join("/"), "http://localhost:3000"],
+      label: "5-Agent Marketplace Demo",
+    },
+  };
+}
 
 // GET /api/demos — list demos and their status/output
 export async function GET(req: NextRequest) {
@@ -45,7 +47,7 @@ export async function GET(req: NextRequest) {
   }
 
   // List all demos
-  const demos = Object.entries(DEMO_SCRIPTS).map(([id, script]) => {
+  const demos = Object.entries(getDemoScripts()).map(([id, script]) => {
     const running = runningDemos.get(id);
     return {
       id,
@@ -67,7 +69,7 @@ export async function POST(req: NextRequest) {
   const body = await req.json();
   const { id, action: reqAction } = body as { id: string; action: "start" | "stop" };
 
-  if (!id || !DEMO_SCRIPTS[id]) {
+  if (!id || !getDemoScripts()[id]) {
     return NextResponse.json({ error: `Unknown demo: ${id}` }, { status: 400 });
   }
 
@@ -86,7 +88,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: `Demo ${id} is already running` }, { status: 409 });
   }
 
-  const script = DEMO_SCRIPTS[id];
+  const script = getDemoScripts()[id];
   const output: string[] = [];
 
   const env = { ...process.env, API_KEY: process.env.API_KEY || "test" };

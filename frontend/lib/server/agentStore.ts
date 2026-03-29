@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dataPath } from "./dataDir";
 
-const AGENTS_FILE = join(process.cwd(), "agents.json");
+const AGENTS_FILE = dataPath("agents.json");
 
 type AgentMap = Record<string, string>;
 

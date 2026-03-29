@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dataPath } from "./dataDir";
 
-const PROFILES_FILE = join(process.cwd(), "agent-profiles.json");
+const PROFILES_FILE = dataPath("agent-profiles.json");
 
 export interface AgentProfile {
   name: string;

@@ -1,9 +1,9 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
 import { randomBytes } from "crypto";
+import { dataPath } from "./dataDir";
 
-const MARKETPLACE_FILE = join(process.cwd(), "marketplace.json");
-const ACTIVITY_FILE = join(process.cwd(), "marketplace-activity.json");
+const MARKETPLACE_FILE = dataPath("marketplace.json");
+const ACTIVITY_FILE = dataPath("marketplace-activity.json");
 
 export interface ServiceListing {
   id: string;
