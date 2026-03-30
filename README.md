@@ -161,7 +161,7 @@ The frontend is Vercel-ready. Set **Root Directory** to `frontend` in your Verce
 
 - **File storage** — Vercel's serverless filesystem is read-only. All JSON data stores (`agents.json`, `marketplace.json`, `marketplace-activity.json`, `agent-profiles.json`, `tx-activity.json`) write to `/tmp` when the `VERCEL` env var is detected. Data is ephemeral and resets on cold starts.
 - **Demo launcher** — The `/api/demos` endpoint spawns child processes (`marketplace-agents.js`), which is not supported on Vercel. This endpoint works locally only.
-- **Relay service** — The bridge relay (`relay/`) is a long-running process and must be deployed separately (e.g., Railway, Fly.io). It is not part of the Vercel deployment.
+- **Relay service** — The bridge relay (`relay/`) is a long-running process deployed separately on Railway. It polls GenLayer for new verdicts and relays them to Base Sepolia every minute.
 
 **What works everywhere (local + Vercel):**
 
@@ -174,7 +174,20 @@ The frontend is Vercel-ready. Set **Root Directory** to `frontend` in your Verce
 
 - Demo launcher (`/api/demos` → spawns `marketplace-agents.js`)
 - Persistent marketplace/agent data across restarts (files in project root)
-- Relay service (`cd relay && npx tsx src/index.ts`)
+
+### Deploying the Relay (Railway)
+
+The relay service bridges verdicts from GenLayer to Base Sepolia. Deploy on Railway (or any always-on Node.js host):
+
+1. **New Project** → **Deploy from GitHub repo** → select this repo
+2. Set **Root Directory** to `relay`, **Start Command** to `npm start`
+3. Add environment variables:
+
+| Variable | Value |
+|----------|-------|
+| `BRIDGE_SENDER_ADDRESS` | `0x9C97201e8Cc7788Fd435d37B2F5CBAbC4fc7B220` |
+| `PRIVATE_KEY` | Relay wallet private key (must match VerdictRegistry's `bridgeReceiver`) |
+| `BRIDGE_SYNC_INTERVAL` | `*/1 * * * *` (every minute) |
 
 ## Key Features
 
