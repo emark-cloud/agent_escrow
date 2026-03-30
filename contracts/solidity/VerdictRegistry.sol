@@ -6,11 +6,10 @@ import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 /**
  * @title VerdictRegistry
- * @notice Receives AI jury verdicts bridged from GenLayer via LayerZero V2.
+ * @notice Receives AI jury verdicts bridged from GenLayer via relay service.
  *         Stores verdicts on Base Sepolia for cross-chain verification.
  *
- *         Flow: GenLayer IC → BridgeSender.py → Relay → zkSync BridgeForwarder
- *               → LayerZero → Base BridgeReceiver → VerdictRegistry
+ *         Flow: GenLayer IC → BridgeSender.py → Relay Service → VerdictRegistry
  */
 contract VerdictRegistry is IGenLayerBridgeReceiver, Ownable {
     struct Verdict {
@@ -22,7 +21,7 @@ contract VerdictRegistry is IGenLayerBridgeReceiver, Ownable {
         bool exists;
     }
 
-    /// @notice Bridge receiver contract that delivers LayerZero messages
+    /// @notice Bridge receiver (relay wallet) that delivers verdict messages
     address public bridgeReceiver;
 
     /// @notice Verdicts indexed by keccak256(agreementId, milestoneIndex)
