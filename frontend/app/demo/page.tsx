@@ -486,7 +486,7 @@ export default function DemoPage() {
 
                     {/* Response details */}
                     {step.result.response && (
-                      <StepDetails step={step} />
+                      <StepDetails step={step} context={context} />
                     )}
 
                     {step.result.error && step.result.status === "failed" && (
@@ -626,7 +626,7 @@ function ElapsedCounter({ startTime }: { startTime: number }) {
   );
 }
 
-function StepDetails({ step }: { step: DemoStep & { result: StepResult } }) {
+function StepDetails({ step, context }: { step: DemoStep & { result: StepResult }; context: DemoContext }) {
   const [expanded, setExpanded] = useState(false);
   const resp = step.result.response;
   if (!resp) return null;
@@ -639,6 +639,11 @@ function StepDetails({ step }: { step: DemoStep & { result: StepResult } }) {
 
   // For the final state views, show a formatted summary
   const isFinalView = step.id.endsWith("-final");
+
+  // Determine agreement ID for linking
+  const agreementId = step.id.startsWith("happy-") ? context.happyId
+    : step.id.startsWith("dispute-") ? context.disputeId
+    : null;
 
   return (
     <div className="mt-1">
@@ -654,6 +659,15 @@ function StepDetails({ step }: { step: DemoStep & { result: StepResult } }) {
               </span>
             </span>
           ))}
+          {step.id.endsWith("-create") && agreementId && step.result.status === "success" && (
+            <Link
+              href={`/agreements/${agreementId}`}
+              className="text-violet-400 hover:text-violet-300 underline underline-offset-2"
+              target="_blank"
+            >
+              View agreement →
+            </Link>
+          )}
         </div>
       )}
 
