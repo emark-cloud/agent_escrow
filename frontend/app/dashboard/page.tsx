@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { readContract } from "@/lib/genlayer";
+import { useNetwork } from "@/hooks/useNetwork";
 import {
   MILESTONE_STATUS,
   STATUS_COLORS,
@@ -16,13 +17,14 @@ interface AgreementWithMilestones {
 }
 
 export default function DashboardPage() {
+  const { config } = useNetwork();
   const [data, setData] = useState<AgreementWithMilestones[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const fetchAll = useCallback(async () => {
     try {
-      const raw = await readContract<string>("get_all_agreement_ids", []);
+      const raw = await readContract<string>("get_all_agreement_ids", [], config);
       const ids = raw ? (Array.isArray(raw) ? raw : raw.split(",")) : [];
       const uniqueIds = [...new Set(ids.filter(Boolean))];
 
@@ -32,7 +34,8 @@ export default function DashboardPage() {
         try {
           const agRaw = await readContract<Record<string, unknown>>(
             "get_agreement",
-            [id]
+            [id],
+            config
           );
           const ag: Agreement = {
             agreement_id: String(agRaw.agreement_id ?? ""),
@@ -50,7 +53,8 @@ export default function DashboardPage() {
             try {
               const mRaw = await readContract<Record<string, unknown>>(
                 "get_milestone",
-                [id, i]
+                [id, i],
+                config
               );
               milestones.push({
                 description: String(mRaw.description ?? ""),
@@ -81,7 +85,7 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [config]);
 
   useEffect(() => {
     fetchAll();

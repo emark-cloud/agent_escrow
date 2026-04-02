@@ -5,6 +5,7 @@ import { getProfile, ensureSeeded } from "@/lib/server/agentProfiles";
 import {
   serverWriteAndWait,
   consensusResultResponse,
+  resolveNetwork,
 } from "@/lib/server/genlayer-server";
 import { randomBytes } from "crypto";
 
@@ -20,6 +21,7 @@ export async function POST(
   if (isErrorResponse(wallet)) return wallet;
 
   const { id } = await params;
+  const network = resolveNetwork(req);
   const body = await req.json();
   const { agent } = body;
 
@@ -40,7 +42,7 @@ export async function POST(
     );
   }
 
-  const listing = getListingById(id);
+  const listing = getListingById(id, network);
   if (!listing) {
     return NextResponse.json({ error: "Listing not found" }, { status: 404 });
   }
@@ -78,22 +80,22 @@ export async function POST(
       agreementId,
       action: "create",
       wallet: agent,
-    });
+    }, network);
 
     // Update marketplace listing
-    claimListing(id, agent, wallet.address, agreementId);
+    claimListing(id, agent, wallet.address, agreementId, network);
 
     addActivity({
       agent,
       type: "listing_claimed",
       details: `Claimed "${listing.title}" from ${listing.provider_agent} → agreement ${agreementId}`,
-    });
+    }, network);
 
     addActivity({
       agent,
       type: "deal_started",
       details: `Deal ${agreementId}: ${agent} ↔ ${listing.provider_agent} (${listing.price} GEN)`,
-    });
+    }, network);
 
     return NextResponse.json({
       listing_id: id,

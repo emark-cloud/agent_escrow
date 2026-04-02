@@ -1,36 +1,46 @@
 import { createClient, abi } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet, testnetBradbury } from "genlayer-js/chains";
 import type { CalldataEncodable } from "genlayer-js/types";
 import { encodeFunctionData, type Address, type Hex } from "viem";
-import { GENLAYER_CONFIG, GENLAYER_CHAIN } from "./config";
+import { GENLAYER_CONFIG, type NetworkConfig, getGenlayerChain } from "./config";
 import { getProvider } from "./provider";
 
 const { calldata, transactions } = abi;
 
-async function ensureCorrectChain() {
-  const provider = getProvider();
-  if (!provider) throw new Error("No wallet connected. Please connect your wallet first.");
-  try {
-    await provider.request({
-      method: "wallet_switchEthereumChain",
-      params: [{ chainId: GENLAYER_CHAIN.chainId }],
-    });
-  } catch (e: unknown) {
-    // 4902 = chain not added; only then try to add it
-    const code = (e as { code?: number })?.code;
-    if (code === 4902) {
-      await provider.request({
-        method: "wallet_addEthereumChain",
-        params: [GENLAYER_CHAIN],
-      });
-    } else {
-      throw e;
-    }
-  }
+// --- Chain helpers ---
+
+function getSdkChain(config: NetworkConfig) {
+  return config.isStudio ? studionet : testnetBradbury;
 }
 
-// Consensus contract ABI for addTransaction (Bradbury testnet)
-const CONSENSUS_ABI = [
+// Consensus ABI: StudioNet has 5 params (nonpayable), Bradbury has 6 (payable)
+const CONSENSUS_ABI_STUDIONET = [
+  {
+    inputs: [
+      { name: "_sender", type: "address" },
+      { name: "_recipient", type: "address" },
+      { name: "_numOfInitialValidators", type: "uint256" },
+      { name: "_maxRotations", type: "uint256" },
+      { name: "_txData", type: "bytes" },
+    ],
+    name: "addTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "txId", type: "bytes32" },
+      { indexed: true, name: "recipient", type: "address" },
+      { indexed: true, name: "activator", type: "address" },
+    ],
+    name: "NewTransaction",
+    type: "event",
+  },
+] as const;
+
+const CONSENSUS_ABI_BRADBURY = [
   {
     inputs: [
       { name: "_sender", type: "address" },
@@ -57,7 +67,47 @@ const CONSENSUS_ABI = [
   },
 ] as const;
 
-// Convert Map/bigint to plain objects recursively
+function encodeAddTx(config: NetworkConfig, sender: Address, recipient: Address, data: Hex) {
+  if (config.isStudio) {
+    return encodeFunctionData({
+      abi: CONSENSUS_ABI_STUDIONET,
+      functionName: "addTransaction",
+      args: [sender, recipient, BigInt(5), BigInt(3), data],
+    });
+  }
+  return encodeFunctionData({
+    abi: CONSENSUS_ABI_BRADBURY,
+    functionName: "addTransaction",
+    args: [sender, recipient, BigInt(5), BigInt(3), data, BigInt(0)],
+  });
+}
+
+// --- Ensure correct MetaMask chain ---
+
+async function ensureCorrectChain(config: NetworkConfig = GENLAYER_CONFIG) {
+  const provider = getProvider();
+  if (!provider) throw new Error("No wallet connected. Please connect your wallet first.");
+  const chain = getGenlayerChain(config.isStudio ? "studionet" : "bradbury");
+  try {
+    await provider.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: chain.chainId }],
+    });
+  } catch (e: unknown) {
+    const code = (e as { code?: number })?.code;
+    if (code === 4902) {
+      await provider.request({
+        method: "wallet_addEthereumChain",
+        params: [chain],
+      });
+    } else {
+      throw e;
+    }
+  }
+}
+
+// --- Map/bigint conversion ---
+
 export function mapToObject(value: unknown): unknown {
   if (value instanceof Map) {
     const obj: Record<string, unknown> = {};
@@ -70,7 +120,6 @@ export function mapToObject(value: unknown): unknown {
     return value.map(mapToObject);
   }
   if (typeof value === "bigint") {
-    // Use Number for values that fit safely, string for large values
     return value <= BigInt(Number.MAX_SAFE_INTEGER) && value >= BigInt(-Number.MAX_SAFE_INTEGER)
       ? Number(value)
       : value.toString();
@@ -78,23 +127,25 @@ export function mapToObject(value: unknown): unknown {
   return value;
 }
 
-export function createReadClient() {
-  return createClient({ chain: testnetBradbury });
+// --- Read operations ---
+
+export function createReadClient(config: NetworkConfig = GENLAYER_CONFIG) {
+  return createClient({ chain: getSdkChain(config) });
 }
 
 export async function readContract<T>(
   functionName: string,
-  args: CalldataEncodable[] = []
+  args: CalldataEncodable[] = [],
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<T> {
-  const client = createReadClient();
+  const client = createReadClient(config);
   const raw = await client.readContract({
-    address: GENLAYER_CONFIG.contractAddress as Address,
+    address: config.contractAddress as Address,
     functionName,
     args,
   });
   const result = mapToObject(raw);
 
-  // get_agreements_by_address returns a comma-separated string, not a list
   if (functionName === "get_agreements_by_address") {
     const str = result as string;
     return (str ? str.split(",") : []) as T;
@@ -106,9 +157,10 @@ export async function readContract<T>(
 export async function readContractAt<T>(
   contractAddress: string,
   functionName: string,
-  args: CalldataEncodable[] = []
+  args: CalldataEncodable[] = [],
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<T> {
-  const client = createReadClient();
+  const client = createReadClient(config);
   const result = await client.readContract({
     address: contractAddress as Address,
     functionName,
@@ -117,16 +169,18 @@ export async function readContractAt<T>(
   return mapToObject(result) as T;
 }
 
+// --- Write operations ---
+
 export async function deployContract(
   code: string,
-  args: CalldataEncodable[] = []
+  args: CalldataEncodable[] = [],
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<string> {
-  await ensureCorrectChain();
+  await ensureCorrectChain(config);
   const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
-
   if (!senderAddress) throw new Error("No wallet connected");
 
   const calldataObj = calldata.makeCalldataObject(undefined, args, undefined);
@@ -138,28 +192,16 @@ export async function deployContract(
   ]) as Hex;
 
   const zeroAddress = "0x0000000000000000000000000000000000000000" as Address;
-
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      senderAddress,
-      zeroAddress,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, senderAddress, zeroAddress, serializedData);
 
   const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {
         from: senderAddress,
-        to: GENLAYER_CONFIG.consensusContract,
+        to: config.consensusContract,
         data: txData,
-        gas: "0x1312D00",
+        gas: "0x" + config.gasDeploy.toString(16),
       },
     ],
   })) as Hex;
@@ -170,13 +212,13 @@ export async function deployContract(
 export async function getDeployedAddress(
   l1TxHash: string,
   maxRetries = 60,
-  interval = 5000
+  interval = 5000,
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<string | null> {
-  // First extract the GenLayer txId from L1 receipt
-  const glTxId = await getGenLayerTxId(l1TxHash);
+  const glTxId = await getGenLayerTxId(l1TxHash, config);
   if (!glTxId) return null;
 
-  const client = createReadClient();
+  const client = createReadClient(config);
   for (let i = 0; i < maxRetries; i++) {
     try {
       const tx = await client.getTransaction({
@@ -198,18 +240,17 @@ export async function getDeployedAddress(
   return null;
 }
 
-
 export async function sendWriteTransactionTo(
   contractAddress: string,
   functionName: string,
-  args: CalldataEncodable[]
+  args: CalldataEncodable[],
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<string> {
-  await ensureCorrectChain();
+  await ensureCorrectChain(config);
   const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
-
   if (!senderAddress) throw new Error("No wallet connected");
 
   const calldataObj = calldata.makeCalldataObject(functionName, args, undefined);
@@ -219,27 +260,16 @@ export async function sendWriteTransactionTo(
     false,
   ]) as Hex;
 
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      senderAddress,
-      contractAddress as Address,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, senderAddress, contractAddress as Address, serializedData);
 
   const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {
         from: senderAddress,
-        to: GENLAYER_CONFIG.consensusContract,
+        to: config.consensusContract,
         data: txData,
-        gas: "0x4C4B40",
+        gas: "0x" + config.gasWrite.toString(16),
       },
     ],
   })) as Hex;
@@ -249,14 +279,14 @@ export async function sendWriteTransactionTo(
 
 export async function sendWriteTransaction(
   functionName: string,
-  args: CalldataEncodable[]
+  args: CalldataEncodable[],
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<string> {
-  await ensureCorrectChain();
+  await ensureCorrectChain(config);
   const accounts = (await getProvider().request({
     method: "eth_accounts",
   })) as Address[];
   const senderAddress = accounts[0];
-
   if (!senderAddress) throw new Error("No wallet connected");
 
   const calldataObj = calldata.makeCalldataObject(functionName, args, undefined);
@@ -266,27 +296,16 @@ export async function sendWriteTransaction(
     false,
   ]) as Hex;
 
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      senderAddress,
-      GENLAYER_CONFIG.contractAddress,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, senderAddress, config.contractAddress, serializedData);
 
   const txHash = (await getProvider().request({
     method: "eth_sendTransaction",
     params: [
       {
         from: senderAddress,
-        to: GENLAYER_CONFIG.consensusContract,
+        to: config.consensusContract,
         data: txData,
-        gas: "0x4C4B40",
+        gas: "0x" + config.gasWrite.toString(16),
       },
     ],
   })) as Hex;
@@ -294,21 +313,24 @@ export async function sendWriteTransaction(
   return txHash;
 }
 
+// --- Consensus tracking ---
+
 export interface ConsensusStatus {
   stage: "l1_pending" | "pending" | "proposing" | "committing" | "revealing" | "accepted" | "finalized" | "leader_timeout" | "failed";
   votesCommitted: number;
   votesRevealed: number;
   totalValidators: number;
-  result: string; // "IDLE" | "AGREE" | "DISAGREE"
+  result: string;
   glTxId: string | null;
   recommendation: string;
 }
 
 export async function getConsensusStatus(
   l1TxHash: string,
-  cachedGlTxId?: string | null
+  cachedGlTxId?: string | null,
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<ConsensusStatus> {
-  const glTxId = cachedGlTxId || (await getGenLayerTxId(l1TxHash));
+  const glTxId = cachedGlTxId || (await getGenLayerTxId(l1TxHash, config));
 
   if (!glTxId) {
     return {
@@ -322,7 +344,7 @@ export async function getConsensusStatus(
     };
   }
 
-  const client = createReadClient();
+  const client = createReadClient(config);
   try {
     const tx = await client.getTransaction({
       hash: glTxId as unknown as Parameters<typeof client.getTransaction>[0]["hash"],
@@ -386,12 +408,20 @@ export async function getConsensusStatus(
   }
 }
 
-async function getGenLayerTxId(l1TxHash: string): Promise<string | null> {
-  const consensusAddr = GENLAYER_CONFIG.consensusContract.toLowerCase();
-  // Poll for L1 receipt
+// --- GenLayer txId extraction ---
+
+async function getGenLayerTxId(
+  l1TxHash: string,
+  config: NetworkConfig = GENLAYER_CONFIG
+): Promise<string | null> {
+  // On StudioNet, L1 tx hash IS the GenLayer txId
+  if (config.isStudio) return l1TxHash;
+
+  // Bradbury: extract from NewTransaction event logs
+  const consensusAddr = config.consensusContract.toLowerCase();
   for (let i = 0; i < 30; i++) {
     try {
-      const resp = await fetch(GENLAYER_CONFIG.rpcUrl, {
+      const resp = await fetch(config.rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -404,14 +434,12 @@ async function getGenLayerTxId(l1TxHash: string): Promise<string | null> {
       const data = await resp.json();
       const receipt = data?.result;
       if (receipt) {
-        // Find NewTransaction event from consensus contract
         const log = receipt.logs?.find(
           (l: { address: string }) => l.address.toLowerCase() === consensusAddr
         );
         if (log?.topics?.[1]) {
           return log.topics[1];
         }
-        // Receipt exists but no matching log — L1 reverted or no event
         return null;
       }
     } catch {
@@ -426,39 +454,32 @@ export async function waitForTransaction(
   txHash: string,
   maxRetries = 200,
   interval = 5000,
-  onStatus?: (status: ConsensusStatus) => void
+  onStatus?: (status: ConsensusStatus) => void,
+  config: NetworkConfig = GENLAYER_CONFIG
 ): Promise<{ status: string }> {
-  const client = createReadClient();
-
-  // Step 1: Extract GenLayer txId from L1 receipt logs
   onStatus?.({
     stage: "l1_pending", votesCommitted: 0, votesRevealed: 0,
     totalValidators: 5, result: "IDLE", glTxId: null,
     recommendation: "Waiting for L1 confirmation...",
   });
 
-  const glTxId = await getGenLayerTxId(txHash);
+  const glTxId = await getGenLayerTxId(txHash, config);
   if (!glTxId) {
     throw new Error("Could not find GenLayer transaction ID from L1 receipt");
   }
 
-  // Step 2: Poll GenLayer consensus using the correct txId
   for (let i = 0; i < maxRetries; i++) {
-    // Use getConsensusStatus for live tracking
-    const cs = await getConsensusStatus(txHash, glTxId);
+    const cs = await getConsensusStatus(txHash, glTxId, config);
     onStatus?.(cs);
 
-    // Return immediately if consensus is reached
     if (cs.stage === "accepted" || cs.stage === "finalized") {
       return { status: cs.stage === "finalized" ? "FINALIZED" : "ACCEPTED" };
     }
 
-    // Leader timeout — give it some rotations, then throw
     if (cs.stage === "leader_timeout" && i > 30) {
       throw new Error("Leader timed out. Please resubmit the transaction.");
     }
 
-    // Failed/dismissed — throw immediately
     if (cs.stage === "failed") {
       throw new Error("Transaction failed on chain. Please resubmit.");
     }

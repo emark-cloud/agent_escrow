@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { getConsensusStatus, type ConsensusStatus } from "@/lib/genlayer";
+import { useNetwork } from "@/hooks/useNetwork";
 
 export interface AgentTx {
   agreementId: string;
@@ -12,6 +13,7 @@ export interface AgentTx {
 }
 
 export function useAgentActivity(agreementId: string) {
+  const { config } = useNetwork();
   const [activeTxs, setActiveTxs] = useState<AgentTx[]>([]);
 
   const poll = useCallback(async () => {
@@ -29,7 +31,7 @@ export function useAgentActivity(agreementId: string) {
       const withStatus = await Promise.all(
         transactions.map(async (tx: any) => {
           try {
-            const consensus = await getConsensusStatus(tx.txHash, tx.glTxId);
+            const consensus = await getConsensusStatus(tx.txHash, tx.glTxId, config);
             return { ...tx, consensus };
           } catch {
             return { ...tx, consensus: null };
@@ -41,7 +43,7 @@ export function useAgentActivity(agreementId: string) {
     } catch {
       // endpoint unreachable
     }
-  }, [agreementId]);
+  }, [agreementId, config]);
 
   useEffect(() => {
     poll();

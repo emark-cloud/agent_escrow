@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useWallet } from "@/hooks/useWallet";
+import { useNetwork } from "@/hooks/useNetwork";
 import { sendWriteTransaction, waitForTransaction, readContract } from "@/lib/genlayer";
 import type { ConsensusStatus } from "@/lib/genlayer";
 import { mapToUserFriendlyError } from "@/lib/errors";
@@ -17,6 +18,7 @@ const emptyMilestone: MilestoneFormData = {
 
 export default function CreateAgreement() {
   const { address, isConnected, openModal: connect } = useWallet();
+  const { config } = useNetwork();
   const router = useRouter();
 
   const [agreementId, setAgreementId] = useState(
@@ -115,10 +117,10 @@ export default function CreateAgreement() {
         msUrls,
         msCriteria,
         msAmounts,
-      ]);
+      ], config);
 
       setStatus("Waiting for consensus...");
-      await waitForTransaction(hash, 200, 5000, (s) => setConsensus(s));
+      await waitForTransaction(hash, 200, 5000, (s) => setConsensus(s), config);
 
       setPending(false);
       setStatus("Agreement created! Redirecting...");
@@ -126,7 +128,7 @@ export default function CreateAgreement() {
       // Try to get the created ID for redirect, but don't block on it
       let redirectId = agreementId;
       try {
-        const createdId = await readContract<string>("get_last_created_id", []);
+        const createdId = await readContract<string>("get_last_created_id", [], config);
         if (createdId) redirectId = createdId;
       } catch {
         // use the local agreementId

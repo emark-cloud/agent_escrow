@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { sendWriteTransaction, waitForTransaction } from "@/lib/genlayer";
+import { useNetwork } from "@/hooks/useNetwork";
 import { mapToUserFriendlyError } from "@/lib/errors";
 
 interface Props {
@@ -10,6 +11,7 @@ interface Props {
 }
 
 export function DisputePanel({ agreementId, milestoneIndex, onSuccess }: Props) {
+  const { config } = useNetwork();
   const [open, setOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [reason, setReason] = useState("");
@@ -32,9 +34,9 @@ export function DisputePanel({ agreementId, milestoneIndex, onSuccess }: Props) 
         agreementId,
         milestoneIndex,
         reason,
-      ]);
+      ], config);
       setStatus("Waiting for consensus...");
-      await waitForTransaction(hash);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
       setStatus("Dispute filed!");
       onSuccess?.();
       setTimeout(() => {

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse } from "@/lib/server/auth";
-import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { serverWriteContract, serverWriteAndWait, consensusResultResponse, resolveNetwork } from "@/lib/server/genlayer-server";
 
 export async function POST(
   req: NextRequest,
@@ -13,6 +13,7 @@ export async function POST(
   if (isErrorResponse(wallet)) return wallet;
 
   const { id } = await params;
+  const network = resolveNetwork(req);
 
   try {
     const wait = req.nextUrl.searchParams.get("wait") === "true";
@@ -21,11 +22,11 @@ export async function POST(
         agreementId: id,
         action: "cancel",
         wallet: req.headers.get("x-wallet-id") || "unknown",
-      });
+      }, network);
       return consensusResultResponse(result);
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "cancel_agreement", [id]);
+    const txHash = await serverWriteContract(wallet.privateKey, "cancel_agreement", [id], network);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

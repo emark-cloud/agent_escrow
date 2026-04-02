@@ -8,7 +8,8 @@ import {
   useCallback,
   type ReactNode,
 } from "react";
-import { GENLAYER_CHAIN } from "@/lib/config";
+import { getGenlayerChain } from "@/lib/config";
+import { useNetwork } from "@/hooks/useNetwork";
 import {
   getProvider,
   setProvider,
@@ -35,13 +36,15 @@ interface WalletState {
 
 const WalletContext = createContext<WalletState | null>(null);
 
-const EXPECTED_CHAIN_ID = parseInt(GENLAYER_CHAIN.chainId, 16);
-
-function isCorrectChain(chainId: string): boolean {
-  return parseInt(chainId, 16) === EXPECTED_CHAIN_ID;
-}
-
 export function WalletProvider({ children }: { children: ReactNode }) {
+  const { network } = useNetwork();
+  const genlayerChain = getGenlayerChain(network);
+  const expectedChainId = parseInt(genlayerChain.chainId, 16);
+
+  function isCorrectChain(chainId: string): boolean {
+    return parseInt(chainId, 16) === expectedChainId;
+  }
+
   const [address, setAddress] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
   const [wrongNetwork, setWrongNetwork] = useState(false);
@@ -82,13 +85,13 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       try {
         await provider.request({
           method: "wallet_switchEthereumChain",
-          params: [{ chainId: GENLAYER_CHAIN.chainId }],
+          params: [{ chainId: genlayerChain.chainId }],
         });
       } catch (switchError: any) {
         if (switchError?.code === 4902) {
           await provider.request({
             method: "wallet_addEthereumChain",
-            params: [GENLAYER_CHAIN],
+            params: [genlayerChain],
           });
         } else {
           throw switchError;
@@ -106,7 +109,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     } finally {
       setConnecting(false);
     }
-  }, []);
+  }, [genlayerChain]);
 
   const switchNetwork = useCallback(async () => {
     const provider = getProvider();
@@ -114,17 +117,17 @@ export function WalletProvider({ children }: { children: ReactNode }) {
     try {
       await provider.request({
         method: "wallet_switchEthereumChain",
-        params: [{ chainId: GENLAYER_CHAIN.chainId }],
+        params: [{ chainId: genlayerChain.chainId }],
       });
     } catch (switchError: any) {
       if (switchError?.code === 4902) {
         await provider.request({
           method: "wallet_addEthereumChain",
-          params: [GENLAYER_CHAIN],
+          params: [genlayerChain],
         });
       }
     }
-  }, []);
+  }, [genlayerChain]);
 
   const disconnect = useCallback(() => {
     clearProvider();
@@ -217,7 +220,7 @@ export function WalletProvider({ children }: { children: ReactNode }) {
       provider?.removeListener("accountsChanged", handleAccountsChanged);
       provider?.removeListener("chainChanged", handleChainChanged);
     };
-  }, [address]);
+  }, [address, expectedChainId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return createElement(
     WalletContext.Provider,

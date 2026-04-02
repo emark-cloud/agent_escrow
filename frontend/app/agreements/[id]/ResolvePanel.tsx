@@ -8,6 +8,7 @@ import {
   deployContract,
   getDeployedAddress,
 } from "@/lib/genlayer";
+import { useNetwork } from "@/hooks/useNetwork";
 import { INTERNET_COURT_CODE } from "@/lib/internetCourtCode";
 import { mapToUserFriendlyError } from "@/lib/errors";
 import type { Milestone } from "@/types/agreement";
@@ -41,6 +42,7 @@ export function ResolvePanel({
   providerAddress,
   onSuccess,
 }: Props) {
+  const { config } = useNetwork();
   const storageKey = `ic-case-${agreementId}`;
 
   // Restore persisted state on mount
@@ -100,8 +102,8 @@ export function ResolvePanel({
     if (!courtAddress) return;
     try {
       const [statusStr, evidenceStr] = await Promise.all([
-        readContractAt<string>(courtAddress, "get_status", []),
-        readContractAt<string>(courtAddress, "get_evidence", []),
+        readContractAt<string>(courtAddress, "get_status", [], config),
+        readContractAt<string>(courtAddress, "get_evidence", [], config),
       ]);
       setIcStatus(JSON.parse(statusStr));
       setIcEvidence(JSON.parse(evidenceStr));
@@ -158,13 +160,13 @@ export function ResolvePanel({
         guidelines,
         evidenceDefs,
         0,
-      ]);
+      ], config);
 
       setStatus("Waiting for deployment consensus (1-2 min)...");
-      await waitForTransaction(hash);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
 
       setStatus("Deployed! Fetching contract address...");
-      const addr = await getDeployedAddress(hash);
+      const addr = await getDeployedAddress(hash, 60, 5000, config);
       if (addr) {
         setCourtAddress(addr);
         persistCase(addr, milestoneIndex);
@@ -205,28 +207,28 @@ export function ResolvePanel({
 
   const handleAcceptIC = () =>
     runICAction("Accepting IC case...", async () => {
-      const hash = await sendWriteTransactionTo(courtAddress, "accept_contract", []);
-      await waitForTransaction(hash);
+      const hash = await sendWriteTransactionTo(courtAddress, "accept_contract", [], config);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
     });
 
   const handleInitiateDispute = () =>
     runICAction("Initiating dispute...", async () => {
-      const hash = await sendWriteTransactionTo(courtAddress, "initiate_dispute", []);
-      await waitForTransaction(hash);
+      const hash = await sendWriteTransactionTo(courtAddress, "initiate_dispute", [], config);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
     });
 
   const handleSubmitICEvidence = () =>
     runICAction("Submitting evidence...", async () => {
       if (!evidenceText.trim()) throw new Error("Please enter evidence");
-      const hash = await sendWriteTransactionTo(courtAddress, "submit_evidence", [evidenceText]);
-      await waitForTransaction(hash);
+      const hash = await sendWriteTransactionTo(courtAddress, "submit_evidence", [evidenceText], config);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
       setEvidenceText("");
     });
 
   const handleResolveIC = () =>
     runICAction("Resolving dispute — AI jury evaluating (1-2 min)...", async () => {
-      const hash = await sendWriteTransactionTo(courtAddress, "resolve", []);
-      await waitForTransaction(hash);
+      const hash = await sendWriteTransactionTo(courtAddress, "resolve", [], config);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
     });
 
   const handleApplyVerdict = async () => {
@@ -241,9 +243,9 @@ export function ResolvePanel({
         selectedMilestone,
         icStatus.verdict,
         courtAddress,
-      ]);
+      ], config);
       setStatus("Waiting for consensus...");
-      await waitForTransaction(hash);
+      await waitForTransaction(hash, 200, 5000, undefined, config);
       setStatus("Verdict applied!");
       clearCase();
       onSuccess?.();

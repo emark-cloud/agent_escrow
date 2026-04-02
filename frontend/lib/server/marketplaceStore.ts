@@ -1,9 +1,31 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { randomBytes } from "crypto";
 import { dataPath } from "./dataDir";
+import { DEFAULT_NETWORK, type NetworkName } from "../config";
 
-const MARKETPLACE_FILE = dataPath("marketplace.json");
-const ACTIVITY_FILE = dataPath("marketplace-activity.json");
+function marketplaceFile(network: NetworkName = DEFAULT_NETWORK) {
+  return dataPath(`marketplace-${network}.json`);
+}
+
+function activityFile(network: NetworkName = DEFAULT_NETWORK) {
+  return dataPath(`marketplace-activity-${network}.json`);
+}
+
+// Backwards compat: migrate old unscoped files on first read
+function migrateIfNeeded(network: NetworkName) {
+  const oldMp = dataPath("marketplace.json");
+  const oldAct = dataPath("marketplace-activity.json");
+  const newMp = marketplaceFile(network);
+  const newAct = activityFile(network);
+  if (network === DEFAULT_NETWORK) {
+    if (existsSync(oldMp) && !existsSync(newMp)) {
+      writeFileSync(newMp, readFileSync(oldMp, "utf-8"), "utf-8");
+    }
+    if (existsSync(oldAct) && !existsSync(newAct)) {
+      writeFileSync(newAct, readFileSync(oldAct, "utf-8"), "utf-8");
+    }
+  }
+}
 
 export interface ServiceListing {
   id: string;
@@ -39,35 +61,37 @@ export interface MarketplaceEvent {
 
 // --- Listings ---
 
-function readListings(): ServiceListing[] {
-  if (!existsSync(MARKETPLACE_FILE)) return [];
+function readListings(network: NetworkName = DEFAULT_NETWORK): ServiceListing[] {
+  migrateIfNeeded(network);
+  const file = marketplaceFile(network);
+  if (!existsSync(file)) return [];
   try {
-    return JSON.parse(readFileSync(MARKETPLACE_FILE, "utf-8")) as ServiceListing[];
+    return JSON.parse(readFileSync(file, "utf-8")) as ServiceListing[];
   } catch {
     return [];
   }
 }
 
-function writeListings(data: ServiceListing[]): void {
-  writeFileSync(MARKETPLACE_FILE, JSON.stringify(data, null, 2) + "\n", "utf-8");
+function writeListings(data: ServiceListing[], network: NetworkName = DEFAULT_NETWORK): void {
+  writeFileSync(marketplaceFile(network), JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
-export function getAllListings(status?: string): ServiceListing[] {
-  const all = readListings();
+export function getAllListings(status?: string, network: NetworkName = DEFAULT_NETWORK): ServiceListing[] {
+  const all = readListings(network);
   if (!status) return all;
   return all.filter((l) => l.status === status);
 }
 
-export function getListingById(id: string): ServiceListing | undefined {
-  return readListings().find((l) => l.id === id);
+export function getListingById(id: string, network: NetworkName = DEFAULT_NETWORK): ServiceListing | undefined {
+  return readListings(network).find((l) => l.id === id);
 }
 
-export function getListingByAgreementId(agreementId: string): ServiceListing | undefined {
-  return readListings().find((l) => l.agreement_id === agreementId);
+export function getListingByAgreementId(agreementId: string, network: NetworkName = DEFAULT_NETWORK): ServiceListing | undefined {
+  return readListings(network).find((l) => l.agreement_id === agreementId);
 }
 
-export function createListing(listing: Omit<ServiceListing, "id" | "status" | "created_at" | "updated_at">): ServiceListing {
-  const data = readListings();
+export function createListing(listing: Omit<ServiceListing, "id" | "status" | "created_at" | "updated_at">, network: NetworkName = DEFAULT_NETWORK): ServiceListing {
+  const data = readListings(network);
   const now = new Date().toISOString();
   const entry: ServiceListing = {
     ...listing,
@@ -77,7 +101,7 @@ export function createListing(listing: Omit<ServiceListing, "id" | "status" | "c
     updated_at: now,
   };
   data.push(entry);
-  writeListings(data);
+  writeListings(data, network);
   return entry;
 }
 
@@ -85,9 +109,10 @@ export function claimListing(
   id: string,
   claimedBy: string,
   claimedByAddress: string,
-  agreementId: string
+  agreementId: string,
+  network: NetworkName = DEFAULT_NETWORK
 ): ServiceListing | null {
-  const data = readListings();
+  const data = readListings(network);
   const listing = data.find((l) => l.id === id);
   if (!listing || listing.status !== "available") return null;
   listing.status = "claimed";
@@ -95,46 +120,48 @@ export function claimListing(
   listing.claimed_by_address = claimedByAddress;
   listing.agreement_id = agreementId;
   listing.updated_at = new Date().toISOString();
-  writeListings(data);
+  writeListings(data, network);
   return listing;
 }
 
-export function updateListingStatus(id: string, status: ServiceListing["status"]): boolean {
-  const data = readListings();
+export function updateListingStatus(id: string, status: ServiceListing["status"], network: NetworkName = DEFAULT_NETWORK): boolean {
+  const data = readListings(network);
   const listing = data.find((l) => l.id === id);
   if (!listing) return false;
   listing.status = status;
   listing.updated_at = new Date().toISOString();
-  writeListings(data);
+  writeListings(data, network);
   return true;
 }
 
 // --- Activity Feed ---
 
-function readActivity(): MarketplaceEvent[] {
-  if (!existsSync(ACTIVITY_FILE)) return [];
+function readActivity(network: NetworkName = DEFAULT_NETWORK): MarketplaceEvent[] {
+  migrateIfNeeded(network);
+  const file = activityFile(network);
+  if (!existsSync(file)) return [];
   try {
-    return JSON.parse(readFileSync(ACTIVITY_FILE, "utf-8")) as MarketplaceEvent[];
+    return JSON.parse(readFileSync(file, "utf-8")) as MarketplaceEvent[];
   } catch {
     return [];
   }
 }
 
-function writeActivity(data: MarketplaceEvent[]): void {
-  writeFileSync(ACTIVITY_FILE, JSON.stringify(data, null, 2) + "\n", "utf-8");
+function writeActivity(data: MarketplaceEvent[], network: NetworkName = DEFAULT_NETWORK): void {
+  writeFileSync(activityFile(network), JSON.stringify(data, null, 2) + "\n", "utf-8");
 }
 
-export function getActivity(limit = 50): MarketplaceEvent[] {
-  const all = readActivity();
+export function getActivity(limit = 50, network: NetworkName = DEFAULT_NETWORK): MarketplaceEvent[] {
+  const all = readActivity(network);
   return all.slice(-limit);
 }
 
-export function addActivity(event: Omit<MarketplaceEvent, "timestamp">): void {
-  const data = readActivity();
+export function addActivity(event: Omit<MarketplaceEvent, "timestamp">, network: NetworkName = DEFAULT_NETWORK): void {
+  const data = readActivity(network);
   data.push({ ...event, timestamp: new Date().toISOString() });
   // Keep last 200 events
   if (data.length > 200) data.splice(0, data.length - 200);
-  writeActivity(data);
+  writeActivity(data, network);
 }
 
 // --- Marketplace-aware activity logging for agreement actions ---
@@ -147,18 +174,19 @@ export function logMarketplaceActivity(
   agreementId: string,
   type: MarketplaceEvent["type"],
   details: string,
-  fallbackAgent?: string
+  fallbackAgent?: string,
+  network: NetworkName = DEFAULT_NETWORK
 ): void {
-  const listing = getListingByAgreementId(agreementId);
+  const listing = getListingByAgreementId(agreementId, network);
   if (!listing) return; // Not a marketplace agreement
   const agent = fallbackAgent || listing.claimed_by || listing.provider_agent || "unknown";
-  addActivity({ agent, type, details });
+  addActivity({ agent, type, details }, network);
 }
 
 // --- Stats ---
 
-export function getMarketplaceStats() {
-  const listings = readListings();
+export function getMarketplaceStats(network: NetworkName = DEFAULT_NETWORK) {
+  const listings = readListings(network);
   return {
     total: listings.length,
     available: listings.filter((l) => l.status === "available").length,

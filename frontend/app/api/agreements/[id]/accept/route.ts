@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse } from "@/lib/server/auth";
-import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { serverWriteContract, serverWriteAndWait, consensusResultResponse, resolveNetwork } from "@/lib/server/genlayer-server";
 import { logMarketplaceActivity } from "@/lib/server/marketplaceStore";
 
 export async function POST(
@@ -14,6 +14,7 @@ export async function POST(
   if (isErrorResponse(wallet)) return wallet;
 
   const { id } = await params;
+  const network = resolveNetwork(req);
 
   try {
     const walletId = req.headers.get("x-wallet-id") || "unknown";
@@ -23,13 +24,13 @@ export async function POST(
         agreementId: id,
         action: "accept",
         wallet: walletId,
-      });
-      logMarketplaceActivity(id, "deal_started", `${walletId} accepted agreement ${id}`, walletId);
+      }, network);
+      logMarketplaceActivity(id, "deal_started", `${walletId} accepted agreement ${id}`, walletId, network);
       return consensusResultResponse(result);
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "accept_agreement", [id]);
-    logMarketplaceActivity(id, "deal_started", `${walletId} accepted agreement ${id}`, walletId);
+    const txHash = await serverWriteContract(wallet.privateKey, "accept_agreement", [id], network);
+    logMarketplaceActivity(id, "deal_started", `${walletId} accepted agreement ${id}`, walletId, network);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

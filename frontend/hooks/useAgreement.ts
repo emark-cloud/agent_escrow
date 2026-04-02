@@ -1,9 +1,11 @@
 "use client";
 import { useState, useEffect, useCallback } from "react";
 import { readContract } from "@/lib/genlayer";
+import { useNetwork } from "@/hooks/useNetwork";
 import type { Agreement, Milestone } from "@/types/agreement";
 
 export function useAgreement(agreementId: string) {
+  const { config } = useNetwork();
   const [agreement, setAgreement] = useState<Agreement | null>(null);
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
@@ -11,7 +13,7 @@ export function useAgreement(agreementId: string) {
 
   const fetch = useCallback(async () => {
     try {
-      const agRaw = await readContract<Record<string, unknown>>("get_agreement", [agreementId]);
+      const agRaw = await readContract<Record<string, unknown>>("get_agreement", [agreementId], config);
       const ag: Agreement = {
         agreement_id: String(agRaw.agreement_id ?? ""),
         client: String(agRaw.client ?? ""),
@@ -26,7 +28,7 @@ export function useAgreement(agreementId: string) {
 
       const msRaws = await Promise.all(
         Array.from({ length: ag.milestone_count }, (_, i) =>
-          readContract<Record<string, unknown>>("get_milestone", [agreementId, i])
+          readContract<Record<string, unknown>>("get_milestone", [agreementId, i], config)
         )
       );
       setMilestones(
@@ -50,7 +52,7 @@ export function useAgreement(agreementId: string) {
     } finally {
       setLoading(false);
     }
-  }, [agreementId]);
+  }, [agreementId, config]);
 
   useEffect(() => {
     fetch();
@@ -63,6 +65,7 @@ export function useAgreement(agreementId: string) {
 }
 
 export function useAgreementList(address: string | null) {
+  const { config } = useNetwork();
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -74,13 +77,13 @@ export function useAgreementList(address: string | null) {
       return;
     }
     try {
-      const ids = await readContract<string[]>("get_agreements_by_address", [address]);
+      const ids = await readContract<string[]>("get_agreements_by_address", [address], config);
       const uniqueIds = [...new Set(ids)];
 
       const results = await Promise.all(
         uniqueIds.map(async (id) => {
           try {
-            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id]);
+            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id], config);
             return {
               agreement_id: String(agRaw.agreement_id ?? ""),
               client: String(agRaw.client ?? ""),
@@ -104,7 +107,7 @@ export function useAgreementList(address: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [address]);
+  }, [address, config]);
 
   useEffect(() => {
     fetch();
@@ -116,6 +119,7 @@ export function useAgreementList(address: string | null) {
 }
 
 export function useAllAgreements(enabled: boolean) {
+  const { config } = useNetwork();
   const [agreements, setAgreements] = useState<Agreement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -127,14 +131,14 @@ export function useAllAgreements(enabled: boolean) {
       return;
     }
     try {
-      const raw = await readContract<string>("get_all_agreement_ids", []);
+      const raw = await readContract<string>("get_all_agreement_ids", [], config);
       const ids = raw ? (Array.isArray(raw) ? raw : raw.split(",")) : [];
       const uniqueIds = [...new Set(ids.filter(Boolean))];
 
       const results = await Promise.all(
         uniqueIds.map(async (id) => {
           try {
-            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id]);
+            const agRaw = await readContract<Record<string, unknown>>("get_agreement", [id], config);
             return {
               agreement_id: String(agRaw.agreement_id ?? ""),
               client: String(agRaw.client ?? ""),
@@ -158,7 +162,7 @@ export function useAllAgreements(enabled: boolean) {
     } finally {
       setLoading(false);
     }
-  }, [enabled]);
+  }, [enabled, config]);
 
   useEffect(() => {
     fetch();

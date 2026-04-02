@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useNetwork } from "@/hooks/useNetwork";
 
 interface ServiceListing {
   id: string;
@@ -165,6 +166,7 @@ const AGENT_PROFILES = [
 ];
 
 export default function MarketplacePage() {
+  const { network } = useNetwork();
   const [listings, setListings] = useState<ServiceListing[]>([]);
   const [activity, setActivity] = useState<MarketplaceEvent[]>([]);
   const [stats, setStats] = useState<Stats>({ total: 0, available: 0, claimed: 0, completed: 0, failed: 0 });
@@ -173,9 +175,10 @@ export default function MarketplacePage() {
   useEffect(() => {
     async function fetchData() {
       try {
+        const headers = { "x-network": network };
         const [mktRes, actRes] = await Promise.all([
-          fetch("/api/marketplace"),
-          fetch("/api/marketplace/activity"),
+          fetch("/api/marketplace", { headers }),
+          fetch("/api/marketplace/activity", { headers }),
         ]);
         if (mktRes.ok) {
           const mkt = await mktRes.json();
@@ -194,7 +197,7 @@ export default function MarketplacePage() {
     fetchData();
     const interval = setInterval(fetchData, 5000);
     return () => clearInterval(interval);
-  }, []);
+  }, [network]);
 
   const filtered =
     filter === "all"

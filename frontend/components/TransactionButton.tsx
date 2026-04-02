@@ -4,6 +4,7 @@ import { sendWriteTransaction, waitForTransaction } from "@/lib/genlayer";
 import type { ConsensusStatus } from "@/lib/genlayer";
 import { mapToUserFriendlyError } from "@/lib/errors";
 import { ConsensusTracker } from "./ConsensusTracker";
+import { useNetwork } from "@/hooks/useNetwork";
 import type { CalldataEncodable } from "genlayer-js/types";
 
 interface Props {
@@ -25,6 +26,7 @@ export function TransactionButton({
   disabled = false,
   variant = "primary",
 }: Props) {
+  const { config } = useNetwork();
   const [pending, setPending] = useState(false);
   const [consensus, setConsensus] = useState<ConsensusStatus | null>(null);
   const [error, setError] = useState("");
@@ -46,9 +48,9 @@ export function TransactionButton({
     setConsensus(null);
 
     try {
-      const hash = await sendWriteTransaction(functionName, args);
+      const hash = await sendWriteTransaction(functionName, args, config);
       setL1Hash(hash);
-      await waitForTransaction(hash, 200, 5000, handleStatus);
+      await waitForTransaction(hash, 200, 5000, handleStatus, config);
       onSuccess?.();
       setTimeout(() => {
         setConsensus(null);
@@ -69,9 +71,9 @@ export function TransactionButton({
     setConsensus(null);
 
     try {
-      const hash = await sendWriteTransaction(functionName, args);
+      const hash = await sendWriteTransaction(functionName, args, config);
       setL1Hash(hash);
-      await waitForTransaction(hash, 200, 5000, handleStatus);
+      await waitForTransaction(hash, 200, 5000, handleStatus, config);
       onSuccess?.();
       setTimeout(() => {
         setConsensus(null);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey } from "@/lib/server/auth";
 import { ensureSeeded } from "@/lib/server/agentProfiles";
 import { decide } from "@/lib/server/decisionEngine";
+import { resolveNetwork } from "@/lib/server/genlayer-server";
 
 // POST /api/marketplace/decide — get next action for an agent
 export async function POST(req: NextRequest) {
@@ -9,6 +10,7 @@ export async function POST(req: NextRequest) {
   if (authErr) return authErr;
 
   ensureSeeded();
+  const network = resolveNetwork(req);
 
   const body = await req.json();
   const { agent } = body;
@@ -17,6 +19,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Missing required field: agent" }, { status: 400 });
   }
 
-  const decision = decide(agent);
+  const decision = decide(agent, network);
   return NextResponse.json(decision);
 }

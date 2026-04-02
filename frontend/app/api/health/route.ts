@@ -1,8 +1,9 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { privateKeyToAccount } from "viem/accounts";
 import type { Hex } from "viem";
-import { GENLAYER_CONFIG } from "@/lib/config";
+import { getNetworkConfig } from "@/lib/config";
 import { getAllAgents } from "@/lib/server/agentStore";
+import { resolveNetwork } from "@/lib/server/genlayer-server";
 
 export const dynamic = "force-dynamic";
 
@@ -42,10 +43,13 @@ function getAgentWallets(): Record<string, string> {
   return wallets;
 }
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const network = resolveNetwork(req);
+  const config = getNetworkConfig(network);
+
   let rpcOk = false;
   try {
-    const resp = await fetch(GENLAYER_CONFIG.rpcUrl, {
+    const resp = await fetch(config.rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -64,10 +68,11 @@ export async function GET() {
   return NextResponse.json({
     status: rpcOk ? "ok" : "degraded",
     version: API_VERSION,
-    contractAddress: GENLAYER_CONFIG.contractAddress,
-    chainId: GENLAYER_CONFIG.chainId,
-    rpcUrl: GENLAYER_CONFIG.rpcUrl,
-    consensusContract: GENLAYER_CONFIG.consensusContract,
+    network,
+    contractAddress: config.contractAddress,
+    chainId: config.chainId,
+    rpcUrl: config.rpcUrl,
+    consensusContract: config.consensusContract,
     rpcReachable: rpcOk,
     agentWallets: getAgentWallets(),
   });

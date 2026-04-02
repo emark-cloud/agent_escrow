@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey } from "@/lib/server/auth";
-import { readContract, serverReadContractAt } from "@/lib/server/genlayer-server";
+import { readContract, serverReadContractAt, resolveNetwork } from "@/lib/server/genlayer-server";
 import { getCourtAddress } from "@/lib/server/courtStore";
 import type { Agreement, Milestone } from "@/types/agreement";
 import { AGREEMENT_STATUS, MILESTONE_STATUS } from "@/lib/config";
@@ -25,8 +25,10 @@ export async function GET(req: NextRequest) {
     );
   }
 
+  const network = resolveNetwork(req);
+
   try {
-    const ids = await readContract<string[]>("get_agreements_by_address", [address]);
+    const ids = await readContract<string[]>("get_agreements_by_address", [address], network);
 
     const agreements: Array<{
       agreement: Agreement & { statusName: string };
@@ -36,7 +38,7 @@ export async function GET(req: NextRequest) {
     const addressLower = address.toLowerCase();
 
     for (const id of ids) {
-      const agreement = await readContract<Agreement>("get_agreement", [id]);
+      const agreement = await readContract<Agreement>("get_agreement", [id], network);
       const milestones: Array<Milestone & { index: number; statusName: string }> = [];
 
       const isClient = agreement.client.toLowerCase() === addressLower;
@@ -53,7 +55,7 @@ export async function GET(req: NextRequest) {
       }
 
       for (let i = 0; i < agreement.milestone_count; i++) {
-        const ms = await readContract<Milestone>("get_milestone", [id, i]);
+        const ms = await readContract<Milestone>("get_milestone", [id, i], network);
         milestones.push({
           ...ms,
           index: i,
@@ -128,7 +130,7 @@ export async function GET(req: NextRequest) {
             // Court exists — read its status to determine next step
             let icStatus: { status: string; verdict?: string } | null = null;
             try {
-              const statusStr = await serverReadContractAt<string>(courtAddr, "get_status", []);
+              const statusStr = await serverReadContractAt<string>(courtAddr, "get_status", [], network);
               icStatus = JSON.parse(statusStr);
             } catch {
               // Court read failed — skip court actions this cycle
@@ -162,7 +164,7 @@ export async function GET(req: NextRequest) {
                 // Read evidence to see who has submitted
                 let evidence: { party_a?: string; party_b?: string } | null = null;
                 try {
-                  const evidenceStr = await serverReadContractAt<string>(courtAddr, "get_evidence", []);
+                  const evidenceStr = await serverReadContractAt<string>(courtAddr, "get_evidence", [], network);
                   evidence = JSON.parse(evidenceStr);
                 } catch {
                   // Evidence read failed — skip

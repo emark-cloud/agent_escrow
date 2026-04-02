@@ -8,11 +8,12 @@ import {
   serverWaitForConsensus,
   serverReadContractAt,
   consensusResultResponse,
+  resolveNetwork,
 } from "@/lib/server/genlayer-server";
 import { addActiveTx, removeActiveTx } from "@/lib/server/txActivity";
 import { saveCourtDeployment, getCourtAddress } from "@/lib/server/courtStore";
 import { INTERNET_COURT_CODE } from "@/lib/internetCourtCode";
-import { GENLAYER_CONFIG, BRIDGE_CONFIG, BASE_CONFIG } from "@/lib/config";
+import { getNetworkConfig, BRIDGE_CONFIG, BASE_CONFIG } from "@/lib/config";
 import type { Milestone } from "@/types/agreement";
 import { keccak256, toBytes } from "viem";
 
@@ -41,6 +42,7 @@ export async function POST(
   if (isErrorResponse(wallet)) return wallet;
 
   const { id } = await params;
+  const network = resolveNetwork(req);
   const walletId = req.headers.get("x-wallet-id") || "unknown";
 
   let body: Record<string, unknown>;
@@ -66,12 +68,12 @@ export async function POST(
         if (msIdx == null) return rawMsIdx as NextResponse;
 
         // Read agreement and milestone data
-        const agreement = await readContract<Record<string, unknown>>("get_agreement", [id]);
+        const agreement = await readContract<Record<string, unknown>>("get_agreement", [id], network);
         if (!agreement) {
           return NextResponse.json({ error: "Agreement not found" }, { status: 404 });
         }
 
-        const milestone = await readContract<Record<string, unknown>>("get_milestone", [id, msIdx]);
+        const milestone = await readContract<Record<string, unknown>>("get_milestone", [id, msIdx], network);
         if (!milestone) {
           return NextResponse.json({ error: "Milestone not found" }, { status: 404 });
         }
@@ -117,7 +119,7 @@ export async function POST(
           guidelines,
           evidenceDefs,
           0,
-        ]);
+        ], network);
 
         // Update activity with real txHash
         addActiveTx({
@@ -128,10 +130,10 @@ export async function POST(
           startedAt: Date.now(),
         });
 
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
 
         // Get deployed address
-        const courtAddress = await serverGetDeployedAddress(txHash);
+        const courtAddress = await serverGetDeployedAddress(txHash, network);
         removeActiveTx(id, "deploy_court");
 
         if (!courtAddress) {
@@ -157,9 +159,9 @@ export async function POST(
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
-        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "accept_contract", []);
+        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "accept_contract", [], network);
         addActiveTx({ agreementId: id, action: "accept_court", txHash, wallet: walletId, startedAt: Date.now() });
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
         removeActiveTx(id, "accept_court");
         return consensusResultResponse(result);
       }
@@ -170,9 +172,9 @@ export async function POST(
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
-        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "initiate_dispute", []);
+        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "initiate_dispute", [], network);
         addActiveTx({ agreementId: id, action: "initiate_dispute", txHash, wallet: walletId, startedAt: Date.now() });
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
         removeActiveTx(id, "initiate_dispute");
         return consensusResultResponse(result);
       }
@@ -187,9 +189,9 @@ export async function POST(
           return NextResponse.json({ error: "Missing evidence" }, { status: 400 });
         }
 
-        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "submit_evidence", [evidence]);
+        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "submit_evidence", [evidence], network);
         addActiveTx({ agreementId: id, action: "submit_ic_evidence", txHash, wallet: walletId, startedAt: Date.now() });
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
         removeActiveTx(id, "submit_ic_evidence");
         return consensusResultResponse(result);
       }
@@ -200,9 +202,9 @@ export async function POST(
           return NextResponse.json({ error: "Missing court_address (none deployed for this milestone)" }, { status: 400 });
         }
 
-        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "resolve", []);
+        const txHash = await serverWriteContractAt(wallet.privateKey, courtAddress, "resolve", [], network);
         addActiveTx({ agreementId: id, action: "resolve_court", txHash, wallet: walletId, startedAt: Date.now() });
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
         removeActiveTx(id, "resolve_court");
         return consensusResultResponse(result);
       }
@@ -215,7 +217,7 @@ export async function POST(
         }
 
         // Read IC verdict
-        const statusStr = await serverReadContractAt<string>(courtAddress, "get_status", []);
+        const statusStr = await serverReadContractAt<string>(courtAddress, "get_status", [], network);
         const icStatus = JSON.parse(statusStr);
 
         if (icStatus.status !== "resolved") {
@@ -223,14 +225,15 @@ export async function POST(
         }
 
         // Apply verdict to escrow
-        const txHash = await serverWriteContractAt(wallet.privateKey, GENLAYER_CONFIG.contractAddress, "resolve_dispute", [
+        const networkConfig = getNetworkConfig(network);
+        const txHash = await serverWriteContractAt(wallet.privateKey, networkConfig.contractAddress, "resolve_dispute", [
           id,
           msIdx,
           icStatus.verdict,
           courtAddress,
-        ]);
+        ], network);
         addActiveTx({ agreementId: id, action: "apply_verdict", txHash, wallet: walletId, startedAt: Date.now() });
-        const result = await serverWaitForConsensus(txHash);
+        const result = await serverWaitForConsensus(txHash, network);
         removeActiveTx(id, "apply_verdict");
 
         // Cross-chain: send verdict to BridgeSender.py for bridging to Base
@@ -248,7 +251,8 @@ export async function POST(
               wallet.privateKey,
               BRIDGE_CONFIG.genlayerBridgeSender,
               "send_message",
-              [BASE_CONFIG.chainId, BASE_CONFIG.registryAddress, verdictData]
+              [BASE_CONFIG.chainId, BASE_CONFIG.registryAddress, verdictData],
+              network
             );
             // Fire-and-forget: don't wait for consensus to avoid blocking the response
             console.log(`[Bridge] Verdict sent to BridgeSender: ${bridgeTxHash}`);
@@ -276,8 +280,8 @@ export async function POST(
         }
 
         const [statusStr, evidenceStr] = await Promise.all([
-          serverReadContractAt<string>(courtAddress, "get_status", []),
-          serverReadContractAt<string>(courtAddress, "get_evidence", []),
+          serverReadContractAt<string>(courtAddress, "get_status", [], network),
+          serverReadContractAt<string>(courtAddress, "get_evidence", [], network),
         ]);
 
         return NextResponse.json({

@@ -1,6 +1,7 @@
 "use client";
 import Link from "next/link";
 import { ConnectWallet } from "./ConnectWallet";
+import NetworkSwitcher from "./NetworkSwitcher";
 
 export function Header() {
   return (
@@ -43,6 +44,7 @@ export function Header() {
           >
             Agents
           </Link>
+          <NetworkSwitcher />
           <ConnectWallet />
         </nav>
       </div>

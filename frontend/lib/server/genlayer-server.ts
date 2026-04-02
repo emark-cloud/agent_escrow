@@ -1,5 +1,5 @@
 import { createClient, abi } from "genlayer-js";
-import { testnetBradbury } from "genlayer-js/chains";
+import { studionet, testnetBradbury } from "genlayer-js/chains";
 import type { CalldataEncodable } from "genlayer-js/types";
 import {
   createWalletClient,
@@ -10,22 +10,70 @@ import {
   type Hex,
 } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { GENLAYER_CONFIG } from "../config";
+import { NextRequest, NextResponse } from "next/server";
+import {
+  GENLAYER_CONFIG,
+  DEFAULT_NETWORK,
+  type NetworkName,
+  type NetworkConfig,
+  getNetworkConfig,
+} from "../config";
 
 const { calldata, transactions } = abi;
 
-// Custom viem chain definition for signing
-const genlayerChain = defineChain({
-  id: GENLAYER_CONFIG.chainId,
-  name: "GenLayer Bradbury Testnet",
-  nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
-  rpcUrls: {
-    default: { http: [GENLAYER_CONFIG.rpcUrl] },
-  },
-});
+// --- Network resolution from request ---
 
-// Consensus contract ABI (same as client-side)
-const CONSENSUS_ABI = [
+export function resolveNetwork(req: NextRequest): NetworkName {
+  const header = req.headers.get("x-network");
+  if (header === "studionet" || header === "bradbury") return header;
+  const cookie = req.cookies.get("agentescrow_network")?.value;
+  if (cookie === "studionet" || cookie === "bradbury") return cookie;
+  return DEFAULT_NETWORK;
+}
+
+// --- Chain helpers ---
+
+function getSdkChain(config: NetworkConfig) {
+  return config.isStudio ? studionet : testnetBradbury;
+}
+
+function getViemChain(config: NetworkConfig) {
+  return defineChain({
+    id: config.chainId,
+    name: config.chainName,
+    nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
+    rpcUrls: { default: { http: [config.rpcUrl] } },
+  });
+}
+
+// Consensus ABI: StudioNet has 5 params (nonpayable), Bradbury has 6 (payable)
+const CONSENSUS_ABI_STUDIONET = [
+  {
+    inputs: [
+      { name: "_sender", type: "address" },
+      { name: "_recipient", type: "address" },
+      { name: "_numOfInitialValidators", type: "uint256" },
+      { name: "_maxRotations", type: "uint256" },
+      { name: "_txData", type: "bytes" },
+    ],
+    name: "addTransaction",
+    outputs: [],
+    stateMutability: "nonpayable",
+    type: "function",
+  },
+  {
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "txId", type: "bytes32" },
+      { indexed: true, name: "recipient", type: "address" },
+      { indexed: true, name: "activator", type: "address" },
+    ],
+    name: "NewTransaction",
+    type: "event",
+  },
+] as const;
+
+const CONSENSUS_ABI_BRADBURY = [
   {
     inputs: [
       { name: "_sender", type: "address" },
@@ -52,7 +100,23 @@ const CONSENSUS_ABI = [
   },
 ] as const;
 
-// Convert Map/bigint to plain objects recursively
+function encodeAddTx(config: NetworkConfig, sender: Address, recipient: Address, data: Hex) {
+  if (config.isStudio) {
+    return encodeFunctionData({
+      abi: CONSENSUS_ABI_STUDIONET,
+      functionName: "addTransaction",
+      args: [sender, recipient, BigInt(5), BigInt(3), data],
+    });
+  }
+  return encodeFunctionData({
+    abi: CONSENSUS_ABI_BRADBURY,
+    functionName: "addTransaction",
+    args: [sender, recipient, BigInt(5), BigInt(3), data, BigInt(0)],
+  });
+}
+
+// --- Map/bigint conversion ---
+
 export function mapToObject(value: unknown): unknown {
   if (value instanceof Map) {
     const obj: Record<string, unknown> = {};
@@ -72,23 +136,27 @@ export function mapToObject(value: unknown): unknown {
   return value;
 }
 
-export function createReadClient() {
-  return createClient({ chain: testnetBradbury });
+// --- Read operations ---
+
+export function createReadClient(network: NetworkName = DEFAULT_NETWORK) {
+  const config = getNetworkConfig(network);
+  return createClient({ chain: getSdkChain(config) });
 }
 
 export async function readContract<T>(
   functionName: string,
-  args: CalldataEncodable[] = []
+  args: CalldataEncodable[] = [],
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<T> {
-  const client = createReadClient();
+  const config = getNetworkConfig(network);
+  const client = createReadClient(network);
   const raw = await client.readContract({
-    address: GENLAYER_CONFIG.contractAddress as Address,
+    address: config.contractAddress as Address,
     functionName,
     args,
   });
   const result = mapToObject(raw);
 
-  // get_agreements_by_address returns a comma-separated string, not a list
   if (functionName === "get_agreements_by_address") {
     const str = result as string;
     return (str ? str.split(",") : []) as T;
@@ -97,17 +165,36 @@ export async function readContract<T>(
   return result as T;
 }
 
+export async function serverReadContractAt<T>(
+  contractAddress: string,
+  functionName: string,
+  args: CalldataEncodable[] = [],
+  network: NetworkName = DEFAULT_NETWORK
+): Promise<T> {
+  const client = createReadClient(network);
+  const raw = await client.readContract({
+    address: contractAddress as Address,
+    functionName,
+    args,
+  });
+  return mapToObject(raw) as T;
+}
+
+// --- Write operations ---
+
 export async function serverWriteContract(
   privateKey: Hex,
   functionName: string,
-  args: CalldataEncodable[]
+  args: CalldataEncodable[],
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<string> {
+  const config = getNetworkConfig(network);
   const account = privateKeyToAccount(privateKey);
 
   const walletClient = createWalletClient({
     account,
-    chain: genlayerChain,
-    transport: http(GENLAYER_CONFIG.rpcUrl),
+    chain: getViemChain(config),
+    transport: http(config.rpcUrl),
   });
 
   const calldataObj = calldata.makeCalldataObject(functionName, args, undefined);
@@ -117,23 +204,12 @@ export async function serverWriteContract(
     false,
   ]) as Hex;
 
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      account.address,
-      GENLAYER_CONFIG.contractAddress,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, account.address, config.contractAddress, serializedData);
 
   const txHash = await walletClient.sendTransaction({
-    to: GENLAYER_CONFIG.consensusContract,
+    to: config.consensusContract,
     data: txData,
-    gas: BigInt(5_000_000),
+    gas: BigInt(config.gasWrite),
   });
 
   return txHash;
@@ -142,14 +218,16 @@ export async function serverWriteContract(
 export async function serverDeployContract(
   privateKey: Hex,
   code: string,
-  args: CalldataEncodable[]
+  args: CalldataEncodable[],
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<string> {
+  const config = getNetworkConfig(network);
   const account = privateKeyToAccount(privateKey);
 
   const walletClient = createWalletClient({
     account,
-    chain: genlayerChain,
-    transport: http(GENLAYER_CONFIG.rpcUrl),
+    chain: getViemChain(config),
+    transport: http(config.rpcUrl),
   });
 
   const calldataObj = calldata.makeCalldataObject(undefined, args, undefined);
@@ -161,24 +239,12 @@ export async function serverDeployContract(
   ]) as Hex;
 
   const zeroAddress = "0x0000000000000000000000000000000000000000" as Address;
-
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      account.address,
-      zeroAddress,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, account.address, zeroAddress, serializedData);
 
   const txHash = await walletClient.sendTransaction({
-    to: GENLAYER_CONFIG.consensusContract,
+    to: config.consensusContract,
     data: txData,
-    gas: BigInt(20_000_000),
+    gas: BigInt(config.gasDeploy),
   });
 
   return txHash;
@@ -188,14 +254,16 @@ export async function serverWriteContractAt(
   privateKey: Hex,
   contractAddress: string,
   functionName: string,
-  args: CalldataEncodable[]
+  args: CalldataEncodable[],
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<string> {
+  const config = getNetworkConfig(network);
   const account = privateKeyToAccount(privateKey);
 
   const walletClient = createWalletClient({
     account,
-    chain: genlayerChain,
-    transport: http(GENLAYER_CONFIG.rpcUrl),
+    chain: getViemChain(config),
+    transport: http(config.rpcUrl),
   });
 
   const calldataObj = calldata.makeCalldataObject(functionName, args, undefined);
@@ -205,23 +273,12 @@ export async function serverWriteContractAt(
     false,
   ]) as Hex;
 
-  const txData = encodeFunctionData({
-    abi: CONSENSUS_ABI,
-    functionName: "addTransaction",
-    args: [
-      account.address,
-      contractAddress as Address,
-      BigInt(5),
-      BigInt(3),
-      serializedData,
-      BigInt(0),
-    ],
-  });
+  const txData = encodeAddTx(config, account.address, contractAddress as Address, serializedData);
 
   const txHash = await walletClient.sendTransaction({
-    to: GENLAYER_CONFIG.consensusContract,
+    to: config.consensusContract,
     data: txData,
-    gas: BigInt(5_000_000),
+    gas: BigInt(config.gasWrite),
   });
 
   return txHash;
@@ -229,13 +286,14 @@ export async function serverWriteContractAt(
 
 export async function serverGetDeployedAddress(
   l1TxHash: string,
+  network: NetworkName = DEFAULT_NETWORK,
   maxRetries = 60,
   interval = 5000
 ): Promise<string | null> {
-  const glTxId = await serverGetGenLayerTxId(l1TxHash);
+  const glTxId = await serverGetGenLayerTxId(l1TxHash, network);
   if (!glTxId) return null;
 
-  const client = createReadClient();
+  const client = createReadClient(network);
   for (let i = 0; i < maxRetries; i++) {
     try {
       const tx = await client.getTransaction({
@@ -257,28 +315,22 @@ export async function serverGetDeployedAddress(
   return null;
 }
 
-export async function serverReadContractAt<T>(
-  contractAddress: string,
-  functionName: string,
-  args: CalldataEncodable[] = []
-): Promise<T> {
-  const client = createReadClient();
-  const raw = await client.readContract({
-    address: contractAddress as Address,
-    functionName,
-    args,
-  });
-  return mapToObject(raw) as T;
-}
+// --- GenLayer txId extraction ---
 
 export async function serverGetGenLayerTxId(
-  l1TxHash: string
+  l1TxHash: string,
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<string | null> {
-  const consensusAddr = GENLAYER_CONFIG.consensusContract.toLowerCase();
+  const config = getNetworkConfig(network);
 
+  // On StudioNet, L1 tx hash IS the GenLayer txId
+  if (config.isStudio) return l1TxHash;
+
+  // Bradbury: extract from NewTransaction event logs
+  const consensusAddr = config.consensusContract.toLowerCase();
   for (let i = 0; i < 30; i++) {
     try {
-      const resp = await fetch(GENLAYER_CONFIG.rpcUrl, {
+      const resp = await fetch(config.rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -307,6 +359,8 @@ export async function serverGetGenLayerTxId(
   return null;
 }
 
+// --- Consensus result ---
+
 export interface ConsensusResult {
   txHash: string;
   glTxId: string | null;
@@ -316,15 +370,16 @@ export interface ConsensusResult {
 
 export async function serverWaitForConsensus(
   l1TxHash: string,
+  network: NetworkName = DEFAULT_NETWORK,
   maxRetries = 200,
   interval = 5000
 ): Promise<ConsensusResult> {
-  const glTxId = await serverGetGenLayerTxId(l1TxHash);
+  const glTxId = await serverGetGenLayerTxId(l1TxHash, network);
   if (!glTxId) {
     throw new Error("Could not find GenLayer transaction ID from L1 receipt");
   }
 
-  const client = createReadClient();
+  const client = createReadClient(network);
 
   for (let i = 0; i < maxRetries; i++) {
     try {
@@ -335,10 +390,6 @@ export async function serverWaitForConsensus(
       const statusName = (tx as any).statusName as string;
 
       if (statusName === "ACCEPTED" || statusName === "FINALIZED") {
-        // Check if the contract execution failed.
-        // On Bradbury, resultName "AGREE" means validators reached consensus,
-        // but individual votes can be "DISAGREE" (they agreed the execution errored).
-        // All validators voting DISAGREE = contract raised an error.
         const lastRound = (tx as any).lastRound;
         const votes: string[] = lastRound?.validatorVotesName ?? [];
         const allDisagree = votes.length > 0 && votes.every((v: string) => v === "DISAGREE");
@@ -366,12 +417,10 @@ export async function serverWaitForConsensus(
       }
     } catch (e) {
       if (e instanceof Error) {
-        // Re-throw consensus failures, but NOT RPC/network errors
         const msg = e.message;
         const isConsensusFail = msg.startsWith("Transaction failed:") || msg === "Leader timed out. Please resubmit.";
         if (isConsensusFail) throw e;
       }
-      // RPC error or tx not available yet — retry
     }
     await new Promise((r) => setTimeout(r, interval));
   }
@@ -382,9 +431,7 @@ export async function serverWaitForConsensus(
 }
 
 // --- Response helper ---
-import { NextResponse } from "next/server";
 
-/** Returns NextResponse with 422 if contract execution failed, 200 otherwise. */
 export function consensusResultResponse(result: ConsensusResult): NextResponse {
   if (result.executionError) {
     return NextResponse.json(result, { status: 422 });
@@ -394,38 +441,32 @@ export function consensusResultResponse(result: ConsensusResult): NextResponse {
 
 // --- Retryable write+wait ---
 
-/** Returns true for errors that should trigger a full resubmit (new tx). */
 function isRetryableError(e: unknown): boolean {
   if (e instanceof Error) {
     if ((e as any).retryable) return true;
     const msg = e.message.toLowerCase();
-    // RPC connectivity issues — tx may not have gone through
     if (msg.includes("fetch failed") || msg.includes("econnrefused") || msg.includes("econnreset") ||
         msg.includes("timed out") || msg.includes("took too long")) return true;
   }
   return false;
 }
 
-/**
- * Write a contract call and wait for consensus, with automatic retries on
- * transient failures (leader timeout, RPC errors). Resubmits a fresh tx on
- * each retry so we don't poll a dead transaction.
- */
 export async function serverWriteAndWait(
   privateKey: Hex,
   functionName: string,
   args: CalldataEncodable[],
   trackingOpts?: TrackedWaitOptions,
+  network: NetworkName = DEFAULT_NETWORK,
   maxAttempts = 3,
 ): Promise<ConsensusResult> {
   let lastError: Error | undefined;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     try {
-      const txHash = await serverWriteContract(privateKey, functionName, args);
+      const txHash = await serverWriteContract(privateKey, functionName, args, network);
       if (trackingOpts) {
-        return await serverWaitForConsensusTracked(txHash, trackingOpts);
+        return await serverWaitForConsensusTracked(txHash, trackingOpts, network);
       }
-      return await serverWaitForConsensus(txHash);
+      return await serverWaitForConsensus(txHash, network);
     } catch (e) {
       lastError = e instanceof Error ? e : new Error(String(e));
       if (attempt < maxAttempts && isRetryableError(e)) {
@@ -438,9 +479,6 @@ export async function serverWriteAndWait(
   throw lastError;
 }
 
-/**
- * Deploy a contract and wait for consensus, with automatic retries.
- */
 // --- Activity-tracked consensus ---
 import { addActiveTx, removeActiveTx } from "./txActivity";
 
@@ -450,13 +488,10 @@ export interface TrackedWaitOptions {
   wallet: string;
 }
 
-/**
- * Like serverWaitForConsensus, but records the tx in tx-activity.json
- * so the frontend can poll and show a ConsensusTracker.
- */
 export async function serverWaitForConsensusTracked(
   l1TxHash: string,
-  opts: TrackedWaitOptions
+  opts: TrackedWaitOptions,
+  network: NetworkName = DEFAULT_NETWORK
 ): Promise<ConsensusResult> {
   addActiveTx({
     agreementId: opts.agreementId,
@@ -467,7 +502,7 @@ export async function serverWaitForConsensusTracked(
   });
 
   try {
-    const result = await serverWaitForConsensus(l1TxHash);
+    const result = await serverWaitForConsensus(l1TxHash, network);
     return result;
   } finally {
     removeActiveTx(opts.agreementId, opts.action);

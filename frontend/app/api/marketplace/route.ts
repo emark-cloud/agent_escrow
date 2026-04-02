@@ -7,12 +7,14 @@ import {
   addActivity,
 } from "@/lib/server/marketplaceStore";
 import { getProfile, ensureSeeded } from "@/lib/server/agentProfiles";
+import { resolveNetwork } from "@/lib/server/genlayer-server";
 
 // GET /api/marketplace — list all listings (optional ?status=available)
 export async function GET(req: NextRequest) {
+  const network = resolveNetwork(req);
   const status = req.nextUrl.searchParams.get("status") || undefined;
-  const listings = getAllListings(status);
-  const stats = getMarketplaceStats();
+  const listings = getAllListings(status, network);
+  const stats = getMarketplaceStats(network);
   return NextResponse.json({ listings, stats });
 }
 
@@ -47,6 +49,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  const network = resolveNetwork(req);
   const listing = createListing({
     provider_agent: agent,
     provider_address: wallet.address,
@@ -56,13 +59,13 @@ export async function POST(req: NextRequest) {
     monitoring_url,
     sla_criteria,
     price: String(price),
-  });
+  }, network);
 
   addActivity({
     agent,
     type: "listing_created",
     details: `Listed "${title}" for ${price} GEN`,
-  });
+  }, network);
 
   return NextResponse.json({ listing }, { status: 201 });
 }

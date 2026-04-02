@@ -1,6 +1,7 @@
 import { type AgentProfile, getProfile } from "./agentProfiles";
 import { getAllListings, type ServiceListing } from "./marketplaceStore";
 import { pickRandomTemplate, type ServiceTemplate } from "./serviceCatalog";
+import { DEFAULT_NETWORK, type NetworkName } from "../config";
 
 export interface AgentDecision {
   action: "create_listing" | "claim_listing" | "wait";
@@ -47,13 +48,13 @@ function countOwnAvailableListings(agentName: string, listings: ServiceListing[]
   ).length;
 }
 
-export function decide(agentName: string): AgentDecision {
+export function decide(agentName: string, network: NetworkName = DEFAULT_NETWORK): AgentDecision {
   const profile = getProfile(agentName);
   if (!profile) {
     return { action: "wait", reasoning: `Unknown agent: ${agentName}` };
   }
 
-  const allListings = getAllListings();
+  const allListings = getAllListings(undefined, network);
   const activeDeals = countActiveDeals(agentName, allListings);
 
   // At capacity — wait

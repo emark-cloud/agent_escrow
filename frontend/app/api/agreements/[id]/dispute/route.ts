@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey, getWalletForRequest, isErrorResponse, validateMilestoneIndex } from "@/lib/server/auth";
-import { serverWriteContract, serverWriteAndWait, consensusResultResponse } from "@/lib/server/genlayer-server";
+import { serverWriteContract, serverWriteAndWait, consensusResultResponse, resolveNetwork } from "@/lib/server/genlayer-server";
 import { logMarketplaceActivity } from "@/lib/server/marketplaceStore";
 
 export async function POST(
@@ -14,6 +14,7 @@ export async function POST(
   if (isErrorResponse(wallet)) return wallet;
 
   const { id } = await params;
+  const network = resolveNetwork(req);
 
   try {
     const body = await req.json();
@@ -32,13 +33,13 @@ export async function POST(
         agreementId: id,
         action: "dispute",
         wallet: walletId,
-      });
-      logMarketplaceActivity(id, "dispute_filed", `Dispute filed on ${id} milestone ${msIdx}`, walletId);
+      }, network);
+      logMarketplaceActivity(id, "dispute_filed", `Dispute filed on ${id} milestone ${msIdx}`, walletId, network);
       return consensusResultResponse(result);
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "dispute_milestone", [id, msIdx, reason]);
-    logMarketplaceActivity(id, "dispute_filed", `Dispute filed on ${id} milestone ${msIdx}`, walletId);
+    const txHash = await serverWriteContract(wallet.privateKey, "dispute_milestone", [id, msIdx, reason], network);
+    logMarketplaceActivity(id, "dispute_filed", `Dispute filed on ${id} milestone ${msIdx}`, walletId, network);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(

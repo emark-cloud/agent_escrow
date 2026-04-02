@@ -5,6 +5,7 @@ import {
   serverWriteContract,
   serverWriteAndWait,
   consensusResultResponse,
+  resolveNetwork,
 } from "@/lib/server/genlayer-server";
 import type { Agreement } from "@/types/agreement";
 
@@ -12,23 +13,24 @@ export async function GET(req: NextRequest) {
   const authError = checkApiKey(req);
   if (authError) return authError;
 
+  const network = resolveNetwork(req);
   const address = req.nextUrl.searchParams.get("address");
 
   try {
     if (address) {
-      const ids = await readContract<string[]>("get_agreements_by_address", [address]);
+      const ids = await readContract<string[]>("get_agreements_by_address", [address], network);
       const agreements: Agreement[] = [];
       for (const id of ids) {
-        const agreement = await readContract<Agreement>("get_agreement", [id]);
+        const agreement = await readContract<Agreement>("get_agreement", [id], network);
         agreements.push(agreement);
       }
       return NextResponse.json({ agreements });
     }
 
-    const ids = await readContract<string[]>("get_all_agreement_ids");
+    const ids = await readContract<string[]>("get_all_agreement_ids", undefined, network);
     const agreements: Agreement[] = [];
     for (const id of ids) {
-      const agreement = await readContract<Agreement>("get_agreement", [id]);
+      const agreement = await readContract<Agreement>("get_agreement", [id], network);
       agreements.push(agreement);
     }
     return NextResponse.json({ agreements });
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
 
   const wallet = getWalletForRequest(req);
   if (isErrorResponse(wallet)) return wallet;
+  const network = resolveNetwork(req);
 
   try {
     const body = await req.json();
@@ -91,11 +94,11 @@ export async function POST(req: NextRequest) {
         agreementId: agreement_id,
         action: "create",
         wallet: req.headers.get("x-wallet-id") || "unknown",
-      });
+      }, network);
       return consensusResultResponse(result);
     }
 
-    const txHash = await serverWriteContract(wallet.privateKey, "create_agreement", args);
+    const txHash = await serverWriteContract(wallet.privateKey, "create_agreement", args, network);
     return NextResponse.json({ txHash });
   } catch (e) {
     return NextResponse.json(
