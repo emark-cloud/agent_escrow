@@ -172,8 +172,15 @@ The frontend is Vercel-ready. Set **Root Directory** to `frontend` in your Verce
 
 **Local only:**
 
-- Demo launcher (`/api/demos` → spawns `marketplace-agents.js`)
+- Demo launcher (`/api/demos` → spawns `marketplace-agents.js`) — Vercel serverless functions have a 10–60s timeout, too short for the multi-minute agent demo
 - Persistent marketplace/agent data across restarts (files in project root)
+
+**Running the demo against deployed Vercel:**
+
+```bash
+# Run the 5-agent demo locally, pointing at your Vercel deployment
+API_KEY=your-key NETWORK=studionet node marketplace-agents.js https://agentescrow-nu.vercel.app
+```
 
 ### Deploying the Relay (Railway)
 
