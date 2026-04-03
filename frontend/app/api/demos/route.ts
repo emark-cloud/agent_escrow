@@ -18,7 +18,7 @@ function getDemoScripts(): Record<string, { cmd: string; args: string[]; label: 
   return {
     marketplace: {
       cmd: "node",
-      args: [join(PROJECT_ROOT, "marketplace-agents.js"), process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"],
+      args: [join(PROJECT_ROOT, "marketplace-agents.js"), process.env.PUBLIC_URL || process.env.NEXT_PUBLIC_URL || "http://localhost:3000"],
       label: "5-Agent Marketplace Demo",
     },
   };
