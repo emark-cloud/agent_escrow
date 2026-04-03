@@ -162,7 +162,7 @@ export async function GET(req: NextRequest) {
               } else if (icStatus.status === "disputed") {
                 // Step 4: Both parties submit evidence
                 // Read evidence to see who has submitted
-                let evidence: { party_a?: string; party_b?: string } | null = null;
+                let evidence: { evidence_a?: string; evidence_b?: string } | null = null;
                 try {
                   const evidenceStr = await serverReadContractAt<string>(courtAddr, "get_evidence", [], network);
                   evidence = JSON.parse(evidenceStr);
@@ -170,8 +170,8 @@ export async function GET(req: NextRequest) {
                   // Evidence read failed — skip
                 }
 
-                const clientHasEvidence = evidence?.party_a && evidence.party_a.length > 0;
-                const providerHasEvidence = evidence?.party_b && evidence.party_b.length > 0;
+                const clientHasEvidence = evidence?.evidence_a && evidence.evidence_a.length > 0;
+                const providerHasEvidence = evidence?.evidence_b && evidence.evidence_b.length > 0;
 
                 if (isClient && !clientHasEvidence) {
                   actions.push({

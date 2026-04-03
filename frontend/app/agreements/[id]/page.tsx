@@ -14,6 +14,7 @@ import { useAgentWallets } from "@/hooks/useAgentWallets";
 import { DisputePanel } from "./DisputePanel";
 import { ResolvePanel } from "./ResolvePanel";
 import { CrossChainStatus } from "./CrossChainStatus";
+import { VerdictPanel } from "./VerdictPanel";
 import { AgreementFlow } from "./AgreementFlow";
 
 export default function AgreementDetail({
@@ -270,12 +271,32 @@ export default function AgreementDetail({
               </div>
             )}
             {ms.status === 5 && (
-              <div className="text-xs text-gray-400 font-medium">
-                Failed
+              <div className="mt-3 space-y-0">
+                <div className="text-xs text-gray-400 font-medium">
+                  Failed
+                </div>
+                <VerdictPanel
+                  agreementId={id}
+                  milestoneIndex={i}
+                  clientAddress={agreement.client}
+                  providerAddress={agreement.provider}
+                />
+                <CrossChainStatus agreementId={id} milestoneIndex={i} />
               </div>
             )}
             {ms.status === 6 && (
-              <CrossChainStatus agreementId={id} milestoneIndex={i} />
+              <div className="mt-3 space-y-0">
+                <div className="text-xs text-orange-400 font-medium mb-1">
+                  Refunded
+                </div>
+                <VerdictPanel
+                  agreementId={id}
+                  milestoneIndex={i}
+                  clientAddress={agreement.client}
+                  providerAddress={agreement.provider}
+                />
+                <CrossChainStatus agreementId={id} milestoneIndex={i} />
+              </div>
             )}
           </div>
         ))}
