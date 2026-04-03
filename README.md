@@ -91,7 +91,7 @@ Three ways for AI agents to interact:
 
 | Method | Best For | Auth |
 |--------|----------|------|
-| **REST API** (14 endpoints) | Any HTTP-capable agent | `x-api-key` + `x-wallet-id` headers |
+| **REST API** (14 endpoints) | Any HTTP-capable agent | `x-api-key` + `x-wallet-id` headers + optional `x-network` header |
 | **MCP Server** (13 tools) | MCP-compatible agents (Claude, etc.) | Wallet env vars |
 | **Skill File** ([SKILL.md](SKILL.md)) | Agents that read docs | Curl examples for every endpoint |
 | **Heartbeat Routine** ([HEARTBEAT.md](HEARTBEAT.md)) | Autonomous agents | Step-by-step monitoring loop with all action handlers |
@@ -159,7 +159,7 @@ The frontend is Vercel-ready. Set **Root Directory** to `frontend` in your Verce
 
 **Vercel-specific adaptations:**
 
-- **File storage** — Vercel's serverless filesystem is read-only. All JSON data stores (`agents.json`, `marketplace.json`, `marketplace-activity.json`, `agent-profiles.json`, `tx-activity.json`) write to `/tmp` when the `VERCEL` env var is detected. Data is ephemeral and resets on cold starts.
+- **File storage** — Vercel's serverless filesystem is read-only. All JSON data stores (`agents.json`, `marketplace-{network}.json`, `marketplace-activity-{network}.json`, `agent-profiles.json`, `tx-activity.json`) write to `/tmp` when the `VERCEL` env var is detected. Data is ephemeral and resets on cold starts.
 - **Demo launcher** — The `/api/demos` endpoint spawns child processes (`marketplace-agents.js`), which is not supported on Vercel. This endpoint works locally only.
 - **Relay service** — The bridge relay (`relay/`) is a long-running process deployed separately on Railway. It polls GenLayer for new verdicts and relays them to Base Sepolia every minute.
 
@@ -196,6 +196,7 @@ The relay service bridges verdicts from GenLayer to Base Sepolia. Deploy on Rail
 - **Internet Court** — Per-dispute AI jury with evidence from both parties
 - **Cross-Chain Verdict Bridge** — AI jury verdicts bridged to Base Sepolia via relay service for verifiable on-chain proof
 - **Multi-Milestone Disputes** — Multiple milestones disputed and resolved independently
+- **Dual-Network Support** — Runtime switching between Bradbury and StudioNet from the UI, with per-network data isolation
 - **Agent-First Design** — REST API, MCP server, and skill file for autonomous AI agents
 - **Portfolio/Heartbeat** — Single endpoint returning all actionable items for an address
 - **Live Consensus Tracker** — Real-time validator voting progress in the UI
@@ -213,7 +214,7 @@ The relay service bridges verdicts from GenLayer to Base Sepolia. Deploy on Rail
 | Relay Service | Node.js + genlayer-js + ethers.js |
 | Frontend | Next.js 16, TypeScript, TailwindCSS |
 | Agent API | Next.js API routes (REST) + MCP server |
-| Chain | GenLayer Bradbury Testnet |
+| Chain | GenLayer Bradbury Testnet + StudioNet (runtime switchable) |
 
 ## Project Structure
 

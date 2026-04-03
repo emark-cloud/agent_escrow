@@ -12,7 +12,7 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 - `frontend/lib/server/agentStore.ts` — Runtime agent wallet store (reads/writes `agents.json`)
 - `frontend/lib/server/txActivity.ts` — Active transaction tracking for agent consensus UI
 - `frontend/lib/server/serviceCatalog.ts` — 16 curated service templates for marketplace (pass/fail mix)
-- `frontend/lib/server/marketplaceStore.ts` — Marketplace listing + activity CRUD (`marketplace.json`, `marketplace-activity.json`)
+- `frontend/lib/server/marketplaceStore.ts` — Marketplace listing + activity CRUD (per-network: `marketplace-{network}.json`, `marketplace-activity-{network}.json`)
 - `frontend/lib/server/agentProfiles.ts` — 5 agent profiles with roles/specialties (`agent-profiles.json`)
 - `frontend/lib/server/decisionEngine.ts` — Agent decision engine (create listing, claim listing, or wait)
 - `tests/direct/` — 44 direct mode contract tests (pytest + genlayer-test)
@@ -33,7 +33,12 @@ Trustless SLA monitoring for AI agent-to-agent commerce, built on GenLayer.
 
 ## Contract
 
-Deployed on **Bradbury testnet**. Contract address is in `frontend/lib/config.ts`.
+Deployed on **Bradbury testnet** and **StudioNet**. Contract addresses are in `frontend/lib/config.ts`.
+
+| Network | Contract Address | Chain ID |
+|---------|-----------------|----------|
+| Bradbury | `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3` | 4221 |
+| StudioNet | `0x0c72b13441d9d1eF7C4aBfE96d7348c0AAcC24f2` | 61999 |
 
 ### Key Contract Methods
 - `create_agreement(agreement_id, provider, description, ms_descriptions, ms_urls, ms_criteria, ms_amounts)` — Client creates escrow (pipe-separated milestone fields)
@@ -116,10 +121,10 @@ Bridge is enabled when both `BASE_REGISTRY_ADDRESS` and `GL_BRIDGE_SENDER` env v
 ## Agent Integration
 
 ### REST API (`frontend/app/api/`)
-Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-key` header + `x-wallet-id` header for writes. Optional `?wait=true` for synchronous consensus.
+Server holds private keys, executes txs, returns `{ txHash }`. Auth via `x-api-key` header + `x-wallet-id` header for writes. Optional `?wait=true` for synchronous consensus. Network selection via `x-network` header or `agentescrow_network` cookie (defaults to `bradbury`).
 
 **Endpoints:**
-- `GET /api/health` — Public. Returns contract address, chain config, RPC status, agent wallets.
+- `GET /api/health` — Public. Returns contract address, chain config, RPC status, agent wallets, active network.
 - `GET /api/agreements` — List all (or `?address=0x...` to filter)
 - `GET /api/agreements/:id` — Single agreement with milestones
 - `GET /api/agreements/:id/activity` — Active agent transactions (for live consensus tracking)
@@ -182,10 +187,10 @@ npm run dev
 ```
 
 ### Key Frontend Files
-- `lib/config.ts` — Chain config, contract addresses, status labels, color maps, `BASE_CONFIG` + `BRIDGE_CONFIG` for cross-chain
-- `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking)
+- `lib/config.ts` — Dual-network config (`NETWORK_CONFIGS`), `getNetworkConfig()`, `NetworkName` type, status labels, color maps, `BASE_CONFIG` + `BRIDGE_CONFIG` for cross-chain
+- `lib/genlayer.ts` — GenLayer integration (reads, writes, deploys, consensus tracking). All functions accept optional `NetworkConfig` parameter for runtime network switching. Dual consensus ABIs for StudioNet (5 params) vs Bradbury (6 params).
 - `lib/server/auth.ts` — API auth helpers (`checkApiKey`, `validateMilestoneIndex`, `validateNoPipes`), wallet resolution (env + agents.json)
-- `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking, execution error detection, IC deployment/interaction
+- `lib/server/genlayer-server.ts` — Server-side contract interaction, consensus tracking, execution error detection, IC deployment/interaction. `resolveNetwork(req)` reads `x-network` header or cookie. All functions accept `network` parameter.
 - `lib/server/agentStore.ts` — Agent wallet CRUD (`agents.json`)
 - `lib/server/txActivity.ts` — Active transaction tracking (`tx-activity.json`)
 - `lib/internetCourtCode.ts` — IC contract source code (deployed from browser or API)
@@ -194,8 +199,10 @@ npm run dev
 - `components/TransactionButton.tsx` — Reusable tx button with consensus tracking
 - `components/StatusBadge.tsx` — Uses `AGREEMENT_STATUS_COLORS` for agreements, `STATUS_COLORS` for milestones
 - `components/AgentBadge.tsx` — Shows agent name badge next to addresses
+- `hooks/useNetwork.tsx` — Network context provider + `useNetwork()` hook. Stores active network in localStorage, syncs to cookie for server-side. Handles MetaMask chain switching.
 - `hooks/useAgentWallets.tsx` — Context provider for agent wallet lookup (fetched from `/api/health`)
 - `hooks/useAgentActivity.ts` — Polls active agent transactions for live consensus display
+- `components/NetworkSwitcher.tsx` — UI toggle for switching between Bradbury and StudioNet
 - `app/dashboard/page.tsx` — On-chain analytics dashboard (stats, milestone breakdown, SLA performance)
 - `app/agents/page.tsx` — Agent wallet management UI
 - `app/agreements/[id]/ResolvePanel.tsx` — Internet Court dispute resolution UI
@@ -238,12 +245,37 @@ Polls GenLayer BridgeSender and zkSync BridgeReceiver on cron intervals, forward
 ### Claude Code Slash Command
 `/agent-demo` — Claude acts as an AI agent, creating and completing a deal via the REST API.
 
+## Network Switching
+
+The app supports runtime switching between **Bradbury** and **StudioNet** from the frontend UI.
+
+### Key Differences
+
+| Aspect | Bradbury | StudioNet |
+|--------|----------|-----------|
+| Chain ID | 4221 (`0x107D`) | 61999 (`0xF22F`) |
+| RPC | `zksync-os-testnet-genlayer.zksync.dev` | `studio.genlayer.com/api` |
+| Consensus ABI | 6 params (`+ _validUntil`), `payable` | 5 params, `nonpayable` |
+| Gas (write/deploy) | 5M / 20M | 500K / 500K |
+| L1 hash == GL txId | NO (extract from event logs) | YES |
+| SDK chain | `testnetBradbury` | `studionet` |
+
+### How It Works
+- **Frontend:** `NetworkProvider` context stores active network in `localStorage`. `NetworkSwitcher` pill toggle in header. All GenLayer calls read config from `useNetwork()` context.
+- **Server:** API routes resolve network via `resolveNetwork(req)` which checks `x-network` header, then `agentescrow_network` cookie, defaults to `bradbury`.
+- **Marketplace data:** Per-network JSON files (`marketplace-bradbury.json`, `marketplace-studionet.json`). Migration from old unscoped files on first read.
+- **MetaMask:** On switch, the UI calls `wallet_switchEthereumChain` (or `wallet_addEthereumChain` if needed).
+
+### Agent API Network Selection
+Agents pass network via header: `curl -H "x-network: studionet" ...`. Default is `bradbury`.
+
 ## GenLayer Patterns
 - See `GUIDELINES.md` for contract storage types, LLM patterns, and frontend integration
 - **Bradbury testnet** — consensus contract `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D`
-- Reads use `genlayer-js` SDK `readContract()` with `testnetBradbury` chain
+- **StudioNet** — consensus contract `0xb7278A61aa25c888815aFC32Ad3cC52fF24fE575`
+- Reads use `genlayer-js` SDK `readContract()` with chain from active network config
 - GenLayer SDK returns `Map` and `bigint` — `mapToObject()` converts safely (Number for safe values, string for large bigints)
-- L1 tx hash ≠ GenLayer txId on Bradbury — extract from `NewTransaction` event logs
-- Gas: ~5M for writes (`0x4C4B40`), ~20M for contract deployments (`0x1312D00`)
+- L1 tx hash ≠ GenLayer txId on Bradbury — extract from `NewTransaction` event logs. On StudioNet, L1 hash == GL txId.
+- Gas: Bradbury ~5M writes / ~20M deploys. StudioNet ~500K for both.
 - Don't send rapid-fire txs to same contract — wait for ACCEPTED before next tx
 - `ensureCorrectChain()` only catches error code 4902 (chain not added), re-throws user rejections

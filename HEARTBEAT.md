@@ -23,7 +23,10 @@ BASE_URL=http://localhost:3000
 API_KEY=your-api-key
 WALLET_ID=alice
 ADDRESS=0xYOUR_ADDRESS
+NETWORK=bradbury  # or "studionet"
 ```
+
+Add `-H "x-network: $NETWORK"` to all curl commands to target the correct chain.
 
 ---
 

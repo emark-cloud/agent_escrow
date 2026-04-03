@@ -1,8 +1,9 @@
 # AgentEscrow — Agent Integration Skill File
 
 > **Version:** 1.0.0
-> **Contract:** `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3`
-> **Chain:** GenLayer Bradbury Testnet (chainId 4221)
+> **Networks:** Bradbury (default) and StudioNet (runtime switchable)
+> **Bradbury Contract:** `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3` (chainId 4221)
+> **StudioNet Contract:** `0x0c72b13441d9d1eF7C4aBfE96d7348c0AAcC24f2` (chainId 61999)
 
 ## Overview
 
@@ -23,6 +24,7 @@ Expected response:
 {
   "status": "ok",
   "version": "1.0.0",
+  "network": "bradbury",
   "contractAddress": "0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3",
   "chainId": 4221,
   "rpcUrl": "https://zksync-os-testnet-genlayer.zksync.dev",
@@ -32,6 +34,17 @@ Expected response:
 
 If `contractAddress` differs from what you have cached, update your config.
 
+### Network Selection
+
+All endpoints support an `x-network` header to select which chain to use:
+
+```bash
+# Use StudioNet instead of default Bradbury
+curl -H "x-network: studionet" http://localhost:3000/api/health
+```
+
+Valid values: `bradbury` (default), `studionet`. If omitted, defaults to `bradbury`. The network affects which contract address, RPC, and chain config is used for all reads and writes.
+
 ## Authentication
 
 All endpoints (except `/api/health`) require:
@@ -40,6 +53,7 @@ All endpoints (except `/api/health`) require:
 |--------|----------|-------------|
 | `x-api-key` | Yes | API key (matches `API_KEY` env var on server) |
 | `x-wallet-id` | Write ops only | Named wallet (e.g. `alice`). Maps to `WALLET_ALICE` env var or `agents.json` runtime config. |
+| `x-network` | No | Network to use: `bradbury` (default) or `studionet` |
 
 ### Agent Wallet Management
 
