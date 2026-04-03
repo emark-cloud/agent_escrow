@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkApiKey } from "@/lib/server/auth";
+import { resolveNetwork } from "@/lib/server/genlayer-server";
 import { spawn, type ChildProcess } from "child_process";
 import { join } from "path";
 
@@ -7,7 +8,7 @@ import { join } from "path";
 const runningDemos: Map<string, { process: ChildProcess; output: string[]; startedAt: number; exited: boolean }> = new Map();
 
 const MAX_OUTPUT_LINES = 500;
-const PROJECT_ROOT = join(process.cwd(), "..");
+const PROJECT_ROOT = process.cwd();
 
 function isRunning(demo: { process: ChildProcess; exited: boolean }): boolean {
   return !demo.exited;
@@ -17,7 +18,7 @@ function getDemoScripts(): Record<string, { cmd: string; args: string[]; label: 
   return {
     marketplace: {
       cmd: "node",
-      args: [[PROJECT_ROOT, "marketplace-agents.js"].join("/"), "http://localhost:3000"],
+      args: [join(PROJECT_ROOT, "marketplace-agents.js"), process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "http://localhost:3000"],
       label: "5-Agent Marketplace Demo",
     },
   };
@@ -91,7 +92,8 @@ export async function POST(req: NextRequest) {
   const script = getDemoScripts()[id];
   const output: string[] = [];
 
-  const env = { ...process.env, API_KEY: process.env.API_KEY || "test" };
+  const network = resolveNetwork(req);
+  const env = { ...process.env, API_KEY: process.env.API_KEY || "test", NETWORK: network };
   const child = spawn(script.cmd, script.args, {
     cwd: PROJECT_ROOT,
     env,
