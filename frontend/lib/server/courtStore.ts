@@ -1,7 +1,7 @@
 import { readFileSync, writeFileSync, existsSync } from "fs";
-import { join } from "path";
+import { dataPath } from "./dataDir";
 
-const COURT_FILE = join(process.cwd(), "court-deployments.json");
+const COURT_FILE = dataPath("court-deployments.json");
 
 interface CourtDeployment {
   agreementId: string;
