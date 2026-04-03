@@ -20,6 +20,43 @@ import { keccak256, toBytes } from "viem";
 export const dynamic = "force-dynamic";
 
 /**
+ * GET /api/agreements/:id/court?milestone=N
+ * Public read-only: returns court address + IC status for a milestone.
+ */
+export async function GET(
+  req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const network = resolveNetwork(req);
+  const milestoneParam = req.nextUrl.searchParams.get("milestone");
+  const msIdx = milestoneParam != null ? parseInt(milestoneParam, 10) : 0;
+  if (isNaN(msIdx) || msIdx < 0) {
+    return NextResponse.json({ error: "Invalid milestone index" }, { status: 400 });
+  }
+
+  const courtAddress = getCourtAddress(id, msIdx);
+  if (!courtAddress) {
+    return NextResponse.json({ courtAddress: null, case: null, evidence: null });
+  }
+
+  try {
+    const [statusStr, evidenceStr] = await Promise.all([
+      serverReadContractAt<string>(courtAddress, "get_status", [], network),
+      serverReadContractAt<string>(courtAddress, "get_evidence", [], network),
+    ]);
+    return NextResponse.json({
+      courtAddress,
+      case: JSON.parse(statusStr),
+      evidence: JSON.parse(evidenceStr),
+    });
+  } catch {
+    // Court contract exists but can't be read (maybe not finalized yet)
+    return NextResponse.json({ courtAddress, case: null, evidence: null });
+  }
+}
+
+/**
  * POST /api/agreements/:id/court
  *
  * Actions (via `action` field in body):

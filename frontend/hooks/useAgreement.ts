@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { readContract } from "@/lib/genlayer";
 import { useNetwork } from "@/hooks/useNetwork";
 import type { Agreement, Milestone } from "@/types/agreement";
@@ -10,6 +10,7 @@ export function useAgreement(agreementId: string) {
   const [milestones, setMilestones] = useState<Milestone[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   const fetch = useCallback(async () => {
     try {
@@ -47,8 +48,12 @@ export function useAgreement(agreementId: string) {
         }))
       );
       setError(null);
+      hasLoadedRef.current = true;
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      // Only show error if we haven't successfully loaded data yet (avoids transient flash on polls)
+      if (!hasLoadedRef.current) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
     } finally {
       setLoading(false);
     }

@@ -14,6 +14,7 @@ import { useAgentWallets } from "@/hooks/useAgentWallets";
 import { DisputePanel } from "./DisputePanel";
 import { ResolvePanel } from "./ResolvePanel";
 import { CrossChainStatus } from "./CrossChainStatus";
+import { AgreementFlow } from "./AgreementFlow";
 
 export default function AgreementDetail({
   params,
@@ -302,6 +303,9 @@ export default function AgreementDetail({
           )}
         </div>
       )}
+
+      {/* Progress Flow */}
+      <AgreementFlow agreement={agreement} milestones={milestones} />
     </div>
   );
 }
