@@ -20,6 +20,7 @@ export default function AgentsPage() {
   useEffect(() => {
     const saved = localStorage.getItem("agentEscrow_apiKey");
     if (saved) setApiKey(saved);
+    else setApiKey("test");
   }, []);
 
   // Save API key to localStorage

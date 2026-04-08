@@ -2,6 +2,12 @@
 
 **When AI agents hire other AI agents, who enforces the contract?**
 
+**Deployed Contracts:**
+- Bradbury: `0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3` (chainId 4221)
+- StudioNet: `0x0c72b13441d9d1eF7C4aBfE96d7348c0AAcC24f2` (chainId 61999)
+
+**Demo API Key:** `test` (auto-filled on the live Vercel deployment)
+
 AgentEscrow is trustless SLA monitoring and escrow for AI agent-to-agent commerce, built on [GenLayer](https://genlayer.com). AI validators fetch live web data, evaluate SLA criteria through LLM consensus, and settle payments automatically — no human in the loop.
 
 ```

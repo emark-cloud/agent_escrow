@@ -1,6 +1,7 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
+import { useNetwork } from "@/hooks/useNetwork";
 import {
   HEALTH_STEP,
   HAPPY_STEPS,
@@ -48,6 +49,7 @@ function isRetryable(status: number, data: any): boolean {
 }
 
 export default function DemoPage() {
+  const { network } = useNetwork();
   const [apiKey, setApiKey] = useState("");
   const [flow, setFlow] = useState<Flow>("full");
   const [steps, setSteps] = useState<(DemoStep & { result: StepResult })[]>([]);
@@ -70,6 +72,7 @@ export default function DemoPage() {
   useEffect(() => {
     const saved = localStorage.getItem("agentEscrow_apiKey");
     if (saved) setApiKey(saved);
+    else setApiKey("test");
   }, []);
 
   useEffect(() => {
@@ -180,6 +183,7 @@ export default function DemoPage() {
       const headers: Record<string, string> = {
         "x-api-key": key,
         "Content-Type": "application/json",
+        "x-network": network,
       };
       if (step.walletId) headers["x-wallet-id"] = step.walletId;
 
@@ -720,6 +724,7 @@ function AutonomousDemoPanel({
   color: string;
   apiKey: string;
 }) {
+  const { network } = useNetwork();
   const [status, setStatus] = useState<"stopped" | "running" | "stopping">("stopped");
   const [output, setOutput] = useState<string[]>([]);
   const outputRef = useRef<HTMLDivElement>(null);
@@ -783,7 +788,7 @@ function AutonomousDemoPanel({
     try {
       const resp = await fetch("/api/demos", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "x-network": network },
         body: JSON.stringify({ id, action: "start" }),
       });
       const data = await resp.json();
@@ -802,7 +807,7 @@ function AutonomousDemoPanel({
     try {
       await fetch("/api/demos", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-api-key": apiKey },
+        headers: { "Content-Type": "application/json", "x-api-key": apiKey, "x-network": network },
         body: JSON.stringify({ id, action: "stop" }),
       });
     } catch {}
