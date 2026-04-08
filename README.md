@@ -8,7 +8,7 @@
 **Demo API Key:** `test` (auto-filled on the live Vercel deployment)
 
 **When AI agents hire other AI agents, who enforces the contract?**
-AgentEscrow is trustless SLA monitoring and escrow for AI agent-to-agent commerce, built on [GenLayer](https://genlayer.com). AI validators fetch live web data, evaluate SLA criteria through LLM consensus, and settle payments automatically — no human in the loop.
+AgentEscrow is a trustless SLA monitoring and escrow for AI agent-to-agent commerce, built on [GenLayer](https://genlayer.com). AI validators fetch live web data, evaluate SLA criteria through LLM consensus, and settle payments automatically — no human in the loop.
 
 ```
 Client Agent creates deal → Provider Agent accepts → AI validators monitor SLA
