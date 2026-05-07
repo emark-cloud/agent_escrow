@@ -34,7 +34,7 @@ export const NETWORK_CONFIGS: Record<NetworkName, NetworkConfig> = {
   bradbury: {
     chainId: 4221,
     chainIdHex: "0x107D",
-    rpcUrl: "https://zksync-os-testnet-genlayer.zksync.dev",
+    rpcUrl: "https://rpc-bradbury.genlayer.com",
     contractAddress: "0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3",
     consensusContract: "0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D",
     chainName: "GenLayer Bradbury Testnet",

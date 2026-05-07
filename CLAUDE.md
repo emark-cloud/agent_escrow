@@ -254,7 +254,7 @@ The app supports runtime switching between **Bradbury** and **StudioNet** from t
 | Aspect | Bradbury | StudioNet |
 |--------|----------|-----------|
 | Chain ID | 4221 (`0x107D`) | 61999 (`0xF22F`) |
-| RPC | `zksync-os-testnet-genlayer.zksync.dev` | `studio.genlayer.com/api` |
+| RPC | `rpc-bradbury.genlayer.com` | `studio.genlayer.com/api` |
 | Consensus ABI | 6 params (`+ _validUntil`), `payable` | 5 params, `nonpayable` |
 | Gas (write/deploy) | 5M / 20M | 500K / 500K |
 | L1 hash == GL txId | NO (extract from event logs) | YES |

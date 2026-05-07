@@ -8,7 +8,7 @@ Every GenLayer Intelligent Contract follows this structure:
 
 ```python
 # v0.1.0
-# { "Depends": "py-genlayer:latest" }
+# { "Depends": "py-genlayer:1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6" }
 from genlayer import *
 from dataclasses import dataclass
 
@@ -39,7 +39,7 @@ class MyContract(gl.Contract):
         self.items[key] = value
 ```
 
-**Important:** The first two lines are the contract header. The `Depends` line specifies the py-genlayer version. On **StudioNet/Studio**, use `latest`. On **Bradbury testnet**, use the specific hash (see Part 4).
+**Important:** The first two lines are the contract header. The `Depends` line specifies the py-genlayer version — use the specific hash on both **StudioNet** and **Bradbury** (see Part 4).
 
 ### 1.2 Storage Types
 
@@ -87,19 +87,32 @@ def set_provider(self, provider: str) -> None:
 
 ### 1.6 LLM Integration (AI Features)
 
+The official docs now recommend a **custom leader/validator pattern** via `gl.vm.run_nondet_unsafe(leader_fn, validator_fn)` as the primary way to handle non-deterministic operations. The leader proposes a result; the validator independently verifies it.
+
 ```python
 @gl.public.write
 def ai_method(self, user_input: str) -> str:
-    def make_decision() -> str:
+    def leader_fn() -> str:
         prompt = f"""Analyze: {user_input}
         Respond with exactly YES or NO."""
-        result = gl.nondet.exec_prompt(prompt)
-        return result.strip().upper()
+        return gl.nondet.exec_prompt(prompt).strip().upper()
 
-    # Wrap non-deterministic AI in equivalence principle
-    outcome = gl.eq_principle.strict_eq(make_decision)
-    return outcome
+    def validator_fn(leader_result) -> bool:
+        if not isinstance(leader_result, gl.vm.Return):
+            return False
+        # Re-run independently and compare
+        return leader_fn() == leader_result.calldata
 
+    return gl.vm.run_nondet_unsafe(leader_fn, validator_fn)
+```
+
+**Convenience wrappers** (still supported, used in this project):
+- `gl.eq_principle.strict_eq(fn)` — exact match across validators (good for objective data; will fail consensus on raw LLM output)
+- `gl.eq_principle.prompt_comparative(fn, principle="...")` — LLM-driven equivalence check via the `EqComparative` template
+- `gl.eq_principle.prompt_non_comparative(fn, task="...", criteria="...")` — leader does the task, validators judge the output via the `EqNonComparativeValidator` template
+
+```python
+# Convenience wrapper example — used by this project's SLA checks
 @gl.public.write
 def ai_evaluation(self, data: str) -> str:
     def evaluate() -> str:
@@ -107,23 +120,19 @@ def ai_evaluation(self, data: str) -> str:
         Return a JSON object with your assessment."""
         return gl.nondet.exec_prompt(prompt).strip()
 
-    # Use non-comparative for subjective evaluations
-    result = gl.eq_principle.prompt_non_comparative(
+    return gl.eq_principle.prompt_non_comparative(
         evaluate,
         task="Evaluate the provided data",
-        criteria="""
-The AI response must:
-1. Be valid JSON
-2. Contain reasonable assessment based on the input
-"""
+        criteria="Response must be valid JSON with reasonable assessment based on the input",
     )
-    return result
 ```
 
-**Equivalence Principles:**
-- `gl.eq_principle.strict_eq(fn)` - Validators must get exact same result
-- `gl.eq_principle.prompt_comparative(fn, task, criteria)` - LLM compares leader output
-- `gl.eq_principle.prompt_non_comparative(fn, task, criteria)` - LLM validates independently
+**Choosing a pattern:**
+- **`run_nondet_unsafe`** — full control over comparison logic (numeric tolerance, partial field matching, error classification). Recommended for new contracts.
+- **`strict_eq`** — only when output is fully deterministic or canonicalized (e.g., `json.dumps(..., sort_keys=True)`).
+- **`prompt_comparative` / `prompt_non_comparative`** — use when the LLM-driven comparison templates fit; node operators can fine-tune these prompts over time.
+
+The validator's `leader_result` arg is a `gl.vm.Result` — either `gl.vm.Return[T]` (use `.calldata`), `gl.vm.UserError`, or `gl.vm.VMError`. Always type-check before accessing `.calldata`.
 
 ### 1.7 Web Data Access
 
@@ -505,16 +514,16 @@ Bradbury is GenLayer's public testnet. It uses real distributed validators with 
 | | StudioNet | Bradbury |
 |---|---|---|
 | Chain ID | `61999` (`0xF22F`) | `4221` (`0x107D`) |
-| RPC URL | `https://studio.genlayer.com/api` | `https://zksync-os-testnet-genlayer.zksync.dev` |
+| RPC URL | `https://studio.genlayer.com/api` | `https://rpc-bradbury.genlayer.com` |
 | Consensus contract | `0xb7278A61...` | `0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D` |
 | `addTransaction` params | 5 params, `nonpayable` | **6 params** (+ `_validUntil`), `payable` |
 | Gas needed | ~500K (`0x7A120`) | **~5M (`0x4C4B40`)** |
 | Consensus time | 1-2 min | 1-5+ min |
-| py-genlayer | `latest` | Specific hash (see below) |
+| py-genlayer | Specific hash (see below) | Specific hash (see below) |
 | L1 tx hash = GL txId | Yes | **No** (must extract from event logs) |
 | Transaction ordering | Reliable | Rapid-fire txs can be dropped |
 
-### 4.2 Contract Header for Bradbury
+### 4.2 Contract Header (both networks)
 
 ```python
 # v0.1.0
@@ -522,7 +531,7 @@ Bradbury is GenLayer's public testnet. It uses real distributed validators with 
 from genlayer import *
 ```
 
-**Do NOT use `latest`** — it doesn't resolve on Bradbury. Use the specific hash above.
+Use this specific hash on both **StudioNet** and **Bradbury**. The official docs only document hash-pinned versions; `latest` is not a documented identifier.
 
 ### 4.3 Frontend Config for Bradbury
 
@@ -530,7 +539,7 @@ from genlayer import *
 export const GENLAYER_CONFIG = {
   chainId: 4221,
   chainIdHex: "0x107D",
-  rpcUrl: "https://zksync-os-testnet-genlayer.zksync.dev",
+  rpcUrl: "https://rpc-bradbury.genlayer.com",
   contractAddress: "0xYOUR_CONTRACT" as `0x${string}`,
   consensusContract: "0x0112Bf6e83497965A5fdD6Dad1E447a6E004271D" as `0x${string}`,
 };
@@ -538,7 +547,7 @@ export const GENLAYER_CONFIG = {
 export const GENLAYER_CHAIN = {
   chainId: "0x107D",
   chainName: "GenLayer Bradbury Testnet",
-  rpcUrls: ["https://zksync-os-testnet-genlayer.zksync.dev"],
+  rpcUrls: ["https://rpc-bradbury.genlayer.com"],
   nativeCurrency: { name: "GEN", symbol: "GEN", decimals: 18 },
 };
 ```
@@ -680,7 +689,7 @@ L1 Submitted → PENDING → COMMITTING → REVEALING → ACCEPTED → FINALIZED
 
 ### 4.9 Explorers
 
-- **L1 transactions:** `https://zksync-os-testnet-genlayer.explorer.zksync.dev/tx/<l1TxHash>`
+- **L1 transactions:** `https://explorer.testnet-chain.genlayer.com/tx/<l1TxHash>`
 - **GenLayer consensus:** `https://explorer-bradbury.genlayer.com/tx/<glTxId>`
 
 Note: These are different explorers for different things. An L1 tx may succeed (`status: 0x1`) while the GenLayer consensus fails (result: IDLE).
@@ -730,7 +739,7 @@ echo "password" | genlayer deploy --contract contracts/my_contract.py
 | Gas (writes) | `0x7A120` (500K) | `0x4C4B40` (5M) |
 | Gas (deploys) | `0x7A120` (500K) | `0x1312D00` (20M) |
 | Wait for tx | Use L1 hash directly | Extract GL txId from event logs |
-| py-genlayer | `latest` | `1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` |
+| py-genlayer | `1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` | `1jb45aa8ynh2a9c9xn3b7qqh8sm5q93hwfp7jqmwsfhh8jpz09h6` |
 
 
 

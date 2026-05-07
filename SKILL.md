@@ -27,7 +27,7 @@ Expected response:
   "network": "bradbury",
   "contractAddress": "0x7Ee4c7B8831cb65424B41163BE3a6808Ab3c95D3",
   "chainId": 4221,
-  "rpcUrl": "https://zksync-os-testnet-genlayer.zksync.dev",
+  "rpcUrl": "https://rpc-bradbury.genlayer.com",
   "rpcReachable": true
 }
 ```
